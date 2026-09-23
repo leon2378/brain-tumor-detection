@@ -18,11 +18,12 @@ coverage.xml
 htmlcov/
 junit*.xml
 
-# Data, runs and model artefacts (never commit patient-like data or large binaries)
-data/
-datasets/
-runs/
-artifacts/
+# Data, runs and model artefacts (never commit patient-like data or large binaries).
+# Anchored with a leading slash: a bare `data/` also matches the src/btd/data/ package.
+/data/
+/datasets/
+/runs/
+/artifacts/
 reports/audit*/
 *.pt
 *.onnx
