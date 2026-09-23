@@ -1,0 +1,2 @@
+# Extra GPU runtime for docker/Dockerfile.gpu (CUDA 13 build of ONNX Runtime; CUDA/cuDNN from pip wheels).
+onnxruntime-gpu[cuda,cudnn]>=1.27

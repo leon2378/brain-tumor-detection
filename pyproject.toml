@@ -1,0 +1,157 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brain-tumor-detection"
+version = "0.1.0"
+description = "Brain tumour detection and segmentation on MRI (BRISC 2025) with YOLO26-seg, INT8/FP16 ONNX quantisation and a FastAPI inference service."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [{ name = "Leon Lusbo" }]
+keywords = ["mri", "brain-tumor", "segmentation", "yolo", "onnx", "quantization", "fastapi", "mlops"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+# Core deps are deliberately tiny. torch is NOT listed anywhere: training uses the torch that is
+# already in your (CUDA) environment, so pip never swaps it for a CPU-only wheel.
+# OpenCV comes from `ultralytics` (opencv-python) in training envs, or from the `headless` extra in containers.
+dependencies = [
+  "numpy>=1.24",
+  "pyyaml>=6.0",
+  "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+headless = ["opencv-python-headless>=4.8"]
+cpu = ["onnxruntime>=1.18"]
+gpu = ["onnxruntime-gpu>=1.18"]
+serve = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "python-multipart>=0.0.9",
+  "pydantic-settings>=2.2",
+  "prometheus-client>=0.20",
+]
+train = [
+  "ultralytics>=8.4.158,<8.5",
+  "onnx>=1.16",
+  "onnxslim>=0.1.82",
+  "matplotlib>=3.7",
+  "tqdm>=4.66",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "httpx>=0.27",
+  "httpx2>=2.0",
+  "ruff>=0.6",
+  "mypy>=1.10",
+  "types-PyYAML>=6.0",
+  "onnx>=1.16",
+  "pre-commit>=3.7",
+]
+
+[project.scripts]
+btd = "btd.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/leon2378/brain-tumor-detection"
+Dataset = "https://doi.org/10.5281/zenodo.17524350"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+btd = ["py.typed"]
+
+# ---------------------------------------------------------------------------------------------------------------------
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RUF", "PT", "N", "S", "PL", "PERF"]
+ignore = [
+  "PLR0913", # many args are normal for CLI/config plumbing
+  "PLR2004", # magic values are fine in numeric code
+  "PLR0912",
+  "PLR0915",
+  "PLC0415", # lazy imports are intentional (keep torch/ultralytics out of the serving path)
+  "PLR0917", # positional args in config plumbing
+  "E501",    # line length is enforced by `ruff format`; long strings/URLs are fine
+  "PERF203", # try/except inside loops is deliberate (per-item error reporting)
+  "S101",    # asserts are used for internal invariants
+  "S311",    # random is used for sampling, not crypto
+  "RUF001",
+  "RUF002",
+  "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "PLR", "N802", "N806", "PT011", "PT018"]
+"scripts/**" = ["S", "T201"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["btd"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------------------------------------------------
+[tool.mypy]
+mypy_path = "src"
+packages = ["btd"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Thin wrappers around ultralytics (untyped, dynamic) are type-checked loosely.
+module = ["btd.training.*", "btd.export.*"]
+disallow_untyped_defs = false
+
+# ---------------------------------------------------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+  "pipeline: end-to-end ML pipeline tests (need torch + ultralytics; slow on CPU)",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning:.*multipart.*",
+]
+
+[tool.coverage.run]
+source = ["btd"]
+branch = true
+omit = [
+  # Thin Ultralytics wrappers — need torch; exercised end-to-end by the `ml-pipeline` CI job instead.
+  "src/btd/training/train.py",
+  "src/btd/export/pipeline.py",
+  "src/btd/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]

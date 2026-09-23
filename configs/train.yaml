@@ -1,0 +1,42 @@
+# YOLO26-seg training on BRISC 2025 — tuned for a single 6 GB CUDA GPU (RTX 2060 / 3060 Laptop / GTX 1660 Ti class).
+# Every key is passed straight to ultralytics `model.train(**cfg)`; see https://docs.ultralytics.com/modes/train/
+# Override from the CLI:  btd train --config configs/train.yaml epochs=50 batch=8
+
+model: yolo26s-seg.pt          # COCO-pretrained. Alternatives: yolo26n-seg.pt (fastest), yolo26m-seg.pt (batch 8 on 6 GB),
+                               # yolov8s-seg.pt / yolo11s-seg.pt (the pipeline handles their NMS head too)
+data: data/processed/brisc-yolo/data.yaml
+imgsz: 640
+epochs: 120
+patience: 25                   # early stopping on val fitness
+batch: 8                      # yolo26s-seg @640 with AMP peaks around 4 GB; drop to 8 if you see CUDA OOM
+workers: 4                     # keep low on Windows (spawned workers each hold a copy of the dataset index)
+cache: false                   # 'ram' needs ~6 GB of system RAM for BRISC at 640
+amp: true                      # mixed precision (FP16) — the main reason this fits in 6 GB
+device: 0
+optimizer: auto                # let Ultralytics pick optimiser + LR for the model family
+cos_lr: true
+close_mosaic: 15
+seed: 42
+deterministic: true
+plots: true
+val: true
+
+# MRI-specific augmentation: slices are grayscale, orientation carries anatomy (no vertical flips), and
+# pituitary/sellar location matters, so keep geometric jitter moderate.
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.3
+degrees: 10.0
+translate: 0.1
+scale: 0.3
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.5
+mosaic: 1.0
+mixup: 0.0
+copy_paste: 0.0
+
+project: runs/segment
+name: brisc-yolo26s
+exist_ok: false

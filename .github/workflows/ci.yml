@@ -1,0 +1,204 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  lint:
+    name: lint (ruff, mypy, lock files)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev,serve,cpu,headless]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - name: Lock files are hash-pinned
+        run: |
+          for f in requirements/*.txt; do
+            grep -q -- "--hash=" "$f" || { echo "::error file=$f::not hash-pinned"; exit 1; }
+          done
+
+  tests:
+    name: tests (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e ".[dev,serve,cpu,headless]"
+      - name: Unit tests with coverage
+        run: pytest tests/unit -m "not pipeline" --cov=btd --cov-report=term-missing --cov-fail-under=75
+
+  ml-pipeline:
+    name: ml-pipeline (synthetic data, CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cache pretrained weights
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/btd-weights
+          key: btd-weights-yolo26n-seg
+      - name: Install torch (CPU wheels) and the training extras
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install -e ".[train,serve,cpu,dev,headless]"
+      - name: prepare → train → export → parity → evaluate → serve
+        env:
+          BTD_WEIGHTS_DIR: ~/.cache/btd-weights
+        run: pytest tests/pipeline -m pipeline -q
+
+  docker:
+    name: docker (build, run, smoke test, scan)
+    needs: [lint, tests]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the CPU image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          tags: brain-tumor-detection:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=ci
+            REVISION=${{ github.sha }}
+      - name: Dummy model for the smoke test
+        run: |
+          pip install -e ".[dev]"
+          python -c "from btd.testing import make_dummy_model; make_dummy_model('ci-models')"
+      - name: Run read-only and non-root
+        run: |
+          docker run -d --name btd-ci \
+            --read-only --tmpfs /tmp \
+            --security-opt no-new-privileges:true \
+            -v "$PWD/ci-models:/app/models:ro" \
+            -p 8000:8000 brain-tumor-detection:ci
+          test "$(docker exec btd-ci id -u)" = "10001"
+      - name: Smoke test the API
+        run: python scripts/smoke_test.py http://localhost:8000 --expect-dummy
+      - name: Container logs
+        if: always()
+        run: docker logs btd-ci || true
+      - name: Stop the container
+        if: always()
+        run: docker rm -f btd-ci || true
+      - name: Trivy scan (HIGH/CRITICAL, fixable only)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            aquasec/trivy:latest image \
+              --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress \
+              brain-tumor-detection:ci
+
+  publish:
+    name: publish to GHCR
+    needs: [docker, ml-pipeline]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # Optional: bake a trained model into the image. Publish it as a release asset, then
+      # `gh variable set MODEL_RELEASE_TAG --body <tag>`. Without it the image ships empty and
+      # /ready stays red until a model is mounted (see docker-compose.yml).
+      - name: Fetch the released model
+        if: vars.MODEL_RELEASE_TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ vars.MODEL_RELEASE_TAG }}" --pattern 'model.*' --dir models --clobber
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      # The CUDA image is large, so it is built for release tags only.
+      - name: Build and push the GPU image
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.gpu
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-gpu
+            ${{ env.IMAGE_NAME }}:latest-gpu
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}

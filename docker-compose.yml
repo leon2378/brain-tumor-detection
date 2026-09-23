@@ -1,0 +1,51 @@
+# docker compose up                      → CPU API on http://localhost:8000 (INT8 model from ./models)
+# docker compose --profile gpu up        → GPU API on http://localhost:8001 (put the FP16 model in ./models-gpu)
+services:
+  api:
+    image: ghcr.io/leon2378/brain-tumor-detection:latest
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      BTD_MODEL_PATH: /app/models/model.onnx
+      BTD_MAX_CONCURRENCY: "4"
+      # BTD_API_KEY: change-me
+      # BTD_CORS_ORIGINS: '["http://localhost:5173"]'
+    volumes:
+      - ./models:/app/models:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  api-gpu:
+    profiles: ["gpu"]
+    image: ghcr.io/leon2378/brain-tumor-detection:latest-gpu
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gpu
+    ports:
+      - "8001:8000"
+    environment:
+      BTD_MODEL_PATH: /app/models/model.onnx
+      BTD_PROVIDERS: cuda,cpu
+      BTD_GPU_MEM_LIMIT_MB: "2048"   # keeps the service well inside a 6 GB card
+    volumes:
+      - ./models-gpu:/app/models:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped

@@ -1,0 +1,18 @@
+# Export + quantisation settings used by `btd export`.
+imgsz: 640
+# Which YOLO26 head to ship: "end2end" (NMS-free one-to-one head), "raw" (one-to-many head + NMS) or "auto"
+# (evaluate both on the validation split and keep the one with the higher mask mAP50-95).
+head: auto
+precisions: [fp32, fp16, int8]
+
+int8:
+  calibration_images: 256      # stratified across classes (incl. no-tumour) from the TRAIN split — never val/test
+  method: minmax               # minmax | percentile | entropy
+  per_channel: true
+  keep_head_fp32: false        # true = final head convs stay FP32 (slower, occasionally more accurate)
+  target: cpu                  # cpu (U8S8, fast on x86) | tensorrt (symmetric S8S8 for TensorRT explicit quantisation)
+
+tensorrt:
+  enabled: false               # needs an NVIDIA GPU + `pip install tensorrt`; engines are GPU/driver specific
+  precision: fp16              # fp16 | int8
+  workspace_gb: 2              # keeps the builder inside a 6 GB card

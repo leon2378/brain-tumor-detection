@@ -1,0 +1,10 @@
+# Keep the build context tiny: only the package source and the model to bake in.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+!requirements/
+!models/
+models/**/trt_cache
+**/__pycache__

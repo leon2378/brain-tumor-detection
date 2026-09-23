@@ -1,0 +1,124 @@
+{
+  "generated_at": "2026-09-23T13:16:52+00:00",
+  "model": "brisc-yolo26s-seg",
+  "runs": 100,
+  "rows": [
+    {
+      "precision": "fp32",
+      "provider": "cpu",
+      "size_mb": 41.78,
+      "total": {
+        "mean_ms": 76.99,
+        "p50_ms": 74.01,
+        "p95_ms": 95.0,
+        "max_ms": 104.98
+      },
+      "inference": {
+        "mean_ms": 74.05,
+        "p50_ms": 71.24,
+        "p95_ms": 91.86,
+        "max_ms": 101.95
+      },
+      "throughput_img_s": 12.94,
+      "status": "ok"
+    },
+    {
+      "precision": "fp32",
+      "provider": "cuda",
+      "size_mb": 41.78,
+      "total": {
+        "mean_ms": 15.07,
+        "p50_ms": 13.97,
+        "p95_ms": 21.39,
+        "max_ms": 22.14
+      },
+      "inference": {
+        "mean_ms": 12.54,
+        "p50_ms": 11.34,
+        "p95_ms": 18.84,
+        "max_ms": 19.51
+      },
+      "throughput_img_s": 65.37,
+      "gpu_memory_mb": 376.7,
+      "status": "ok"
+    },
+    {
+      "precision": "fp16",
+      "provider": "cpu",
+      "size_mb": 20.96,
+      "total": {
+        "mean_ms": 78.97,
+        "p50_ms": 76.93,
+        "p95_ms": 95.09,
+        "max_ms": 107.98
+      },
+      "inference": {
+        "mean_ms": 75.94,
+        "p50_ms": 74.05,
+        "p95_ms": 92.06,
+        "max_ms": 104.01
+      },
+      "throughput_img_s": 12.61,
+      "status": "ok"
+    },
+    {
+      "precision": "fp16",
+      "provider": "cuda",
+      "size_mb": 20.96,
+      "total": {
+        "mean_ms": 14.28,
+        "p50_ms": 12.43,
+        "p95_ms": 23.37,
+        "max_ms": 24.04
+      },
+      "inference": {
+        "mean_ms": 11.78,
+        "p50_ms": 9.87,
+        "p95_ms": 20.92,
+        "max_ms": 21.23
+      },
+      "throughput_img_s": 68.99,
+      "gpu_memory_mb": 182.0,
+      "status": "ok"
+    },
+    {
+      "precision": "int8",
+      "provider": "cpu",
+      "size_mb": 11.34,
+      "total": {
+        "mean_ms": 48.34,
+        "p50_ms": 47.47,
+        "p95_ms": 53.0,
+        "max_ms": 56.19
+      },
+      "inference": {
+        "mean_ms": 45.38,
+        "p50_ms": 44.5,
+        "p95_ms": 49.73,
+        "max_ms": 52.79
+      },
+      "throughput_img_s": 20.57,
+      "status": "ok"
+    },
+    {
+      "precision": "int8",
+      "provider": "cuda",
+      "size_mb": 11.34,
+      "total": {
+        "mean_ms": 36.26,
+        "p50_ms": 28.48,
+        "p95_ms": 55.69,
+        "max_ms": 56.58
+      },
+      "inference": {
+        "mean_ms": 33.69,
+        "p50_ms": 25.88,
+        "p95_ms": 52.99,
+        "max_ms": 53.79
+      },
+      "throughput_img_s": 27.4,
+      "gpu_memory_mb": 368.0,
+      "status": "ok"
+    }
+  ]
+}

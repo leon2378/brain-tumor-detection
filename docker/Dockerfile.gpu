@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1.7
+# GPU inference image (NVIDIA). CUDA/cuDNN come from pip wheels (onnxruntime-gpu[cuda,cudnn]), so no CUDA base
+# image is needed — only the NVIDIA driver + container toolkit on the host (`docker run --gpus all`).
+# The locked onnxruntime-gpu targets CUDA 13 (driver >= 580). For CUDA 12 drivers build with:
+#   --build-arg ORT_GPU='onnxruntime-gpu[cuda,cudnn]>=1.20,<1.27'
+ARG PYTHON_VERSION=3.12
+
+FROM python:${PYTHON_VERSION}-slim AS builder
+ARG ORT_GPU=locked
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1
+WORKDIR /src
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+# Hash-locked dependencies first (better layer caching + supply-chain integrity), then the package itself.
+COPY requirements/serve-gpu.txt ./requirements.txt
+RUN if [ "${ORT_GPU}" = "locked" ]; then \
+      pip install --require-hashes --no-deps -r requirements.txt; \
+    else \
+      grep -v -E '^(onnxruntime-gpu|nvidia-)' requirements.txt | sed -E '/^ +--hash/d; s/ \\$//' > unlocked.txt \
+      && pip install -r unlocked.txt "${ORT_GPU}"; \
+    fi
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN pip install --no-deps .
+
+FROM python:${PYTHON_VERSION}-slim AS runtime
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="brain-tumor-detection-gpu" \
+      org.opencontainers.image.description="Brain tumour detection & segmentation API (YOLO26-seg, FP16 ONNX, CUDA)" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="https://github.com/leon2378/brain-tumor-detection"
+ENV PATH="/opt/venv/bin:${PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    BTD_MODEL_PATH=/app/models/model.onnx \
+    BTD_PROVIDERS=cuda,cpu \
+    BTD_GPU_MEM_LIMIT_MB=2048 \
+    BTD_LOG_JSON=true \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+RUN groupadd --system --gid 10001 app \
+ && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=app:app models/ /app/models/
+USER 10001:10001
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD ["python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+CMD ["btd", "serve", "--host", "0.0.0.0", "--port", "8000"]
