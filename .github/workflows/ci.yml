@@ -134,7 +134,9 @@ jobs:
   publish:
     name: publish to GHCR
     needs: [docker, ml-pipeline]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    # Release tags only for now. To also publish every push to main, add:
+    #   || github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read

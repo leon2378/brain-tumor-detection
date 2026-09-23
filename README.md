@@ -150,8 +150,8 @@ tests (py3.10 + py3.12, ≥75% cov) ──┼─► docker: build → run read-o
 ml-pipeline (synthetic data, CPU): prepare → train → export FP32/FP16/INT8 → parity → evaluate → serve ─┴─► publish
 ```
 
-`publish` runs on pushes to `main` and on `v*.*.*` tags. It pushes `ghcr.io/leon2378/brain-tumor-detection` tagged
-with the branch, the short SHA and `latest`, or with semver on tags. Each image comes with an SBOM and build
+`publish` runs on `v*.*.*` tags only (pushes to `main` run every other job but publish nothing). It pushes
+`ghcr.io/leon2378/brain-tumor-detection` tagged with the version, `major.minor`, the short SHA and `latest`. Each image comes with an SBOM and build
 provenance. Tags also build the `-gpu` image. [`codeql.yml`](.github/workflows/codeql.yml) scans the Python code and
 the workflows. Dependabot keeps actions, pip and Docker bases current. Actions are pinned to major version tags;
 pin them to commit SHAs if you need stricter supply-chain guarantees.
