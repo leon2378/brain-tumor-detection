@@ -110,7 +110,8 @@ def test_engine_matches_ultralytics_on_same_onnx(exported: Path, workspace: dict
     for sample in load_split(workspace["dataset"], "test"):
         img = imread(sample.image)
         ours = sorted(engine.predict(img).detections, key=lambda d: -d.confidence)
-        ref = reference.predict(img, conf=conf, iou=0.7, retina_masks=True, verbose=False)[0]
+        # device="cpu": like the engine above; on a CUDA machine Ultralytics would otherwise pick the GPU
+        ref = reference.predict(img, conf=conf, iou=0.7, retina_masks=True, verbose=False, device="cpu")[0]
         assert len(ours) == len(ref.boxes)
         if not ours:
             continue
