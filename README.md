@@ -60,11 +60,27 @@ flowchart LR
 | INT8 | 11.3 MB | 0.630 | 0.938 | 0.934 | 0.969 | 0.986 | 0.803 | 47.5 ms | 28.5 ms |
 
 `yolo26s-seg` @640, 101 epochs (early stopping; best epoch 76), batch 16, AMP. Latency is end-to-end (pre-process,
-inference, decode, masks) over 100 runs on an RTX 3060 Laptop (6 GB) and a Ryzen CPU. INT8 pays off only on CPU:
-the CUDA provider handles quantised graphs poorly, so INT8 is *slower* than FP32 on the GPU. FP16 is the best GPU
-build — identical accuracy to FP32, half the file, 182 MB of GPU memory.
+inference, decode, masks) over 100 runs on an RTX 3060 Laptop GPU (6 GB) and a Ryzen 7 5800H CPU. INT8 pays off only
+on CPU: the CUDA provider handles quantised graphs poorly, so INT8 is *slower* than FP32 on the GPU. FP16 is the best
+GPU build — identical accuracy to FP32, half the file, 182 MB of GPU memory.
 
 Training peak VRAM (from `run_summary.json`): 3.13 GB on a 6 GB card.
+
+### What the predictions look like
+
+![Six BRISC 2025 test slices with the model's predicted tumour masks and the expert masks: three correct tumour predictions, a correctly rejected healthy slice, a meningioma read as glioma, and a missed glioma](docs/images/predictions.png)
+
+Filled colour is the model's mask, drawn exactly as `/v1/predict/overlay` returns it; the white outline is the expert
+mask. The slices are chosen by rule, not by hand ([`scripts/make_readme_figure.py`](scripts/make_readme_figure.py)):
+for each tumour class the correct prediction with the median Dice, a correctly rejected healthy slice, the most
+common mistake at its median confidence, and a missed tumour. Some slices show a weak second detection such as
+`glioma 0.05`, because the operating threshold is 0.05.
+
+The mistake panel shows how the model usually fails: the tumour is outlined almost perfectly (Dice 0.94) but given
+the wrong type. 21 of its 28 test errors are one tumour type read as another; 5 are missed tumours and 2 are healthy
+slices flagged as tumours.
+
+<img src="reports/confusion_test_fp32.png" alt="Confusion matrix of the FP32 model on the 1,000-slice BRISC test split" width="420">
 
 ## Quick start (Windows + conda, NVIDIA 6 GB GPU)
 
@@ -192,7 +208,8 @@ configs/       train.yaml (6 GB profile) · export.yaml (precisions, INT8 calibr
 docker/        Dockerfile (CPU) · Dockerfile.gpu (CUDA via pip wheels)
 requirements/  hash-locked serving dependencies
 tests/         unit/ · api/ · pipeline/ (end-to-end, `-m pipeline`)
-docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md
+scripts/       smoke_test.py (API check used by CI) · lock.py (uv lock files) · make_readme_figure.py
+docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md · images/ (README figures)
 ```
 
 ## Development
