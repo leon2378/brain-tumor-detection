@@ -52,8 +52,8 @@ Operating threshold 0.05, tuned on validation for macro-F1. Latency is end-to-en
 6 GB; ONNX Runtime CUDA and CPU providers).
 
 Per-class, image level (FP32): pituitary F1 0.980, no-tumour 0.975, glioma 0.970, meningioma 0.964. Of the 28
-misclassified slices, 20 are tumour-type confusions, most often meningioma read as glioma (6) and glioma as
-meningioma (4). Five tumour slices are called healthy, and two healthy slices are called tumours.
+misclassified slices, 21 are tumour-type confusions, most often meningioma read as glioma (6) and pituitary as
+meningioma (5). Five tumour slices are called healthy, and two healthy slices are called tumours.
 
 Per-class mask mAP50-95 (FP32) is much less even: meningioma 0.782, pituitary 0.661, **glioma 0.483**. Gliomas have
 irregular, diffuse borders, so boxes and masks are markedly weaker there than the image-level accuracy suggests.
