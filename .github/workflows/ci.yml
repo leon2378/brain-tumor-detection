@@ -32,11 +32,10 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy
-      - name: Lock files are hash-pinned
+      - name: Lock files match pyproject.toml
         run: |
-          for f in requirements/*.txt; do
-            grep -q -- "--hash=" "$f" || { echo "::error file=$f::not hash-pinned"; exit 1; }
-          done
+          pip install uv
+          make check-lock
 
   tests:
     name: tests (py${{ matrix.python }})

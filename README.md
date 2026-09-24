@@ -138,7 +138,15 @@ docker compose --profile gpu up --build             # http://localhost:8001 (nee
 ```
 
 The CPU image has no torch and no Ultralytics. Dependencies are installed from hash-locked files in
-[`requirements/`](requirements/) (`make lock`), and the container runs as UID 10001 with a read-only filesystem.
+[`requirements/`](requirements/), and the container runs as UID 10001 with a read-only filesystem.
+
+The lock files are generated with [uv](https://docs.astral.sh/uv/) (`pip install uv`). Never edit them by hand:
+
+| Task | With make | Without make (e.g. Windows) |
+|---|---|---|
+| Re-lock after changing `pyproject.toml` | `make lock` | `python scripts/lock.py` |
+| Upgrade every pin to the newest compatible release | `make upgrade` | `python scripts/lock.py --upgrade` |
+| Check the locks are up to date (CI does this) | `make check-lock` | `python scripts/lock.py --check` |
 
 ## CI/CD (GitHub Actions)
 
@@ -151,10 +159,14 @@ ml-pipeline (synthetic data, CPU): prepare → train → export FP32/FP16/INT8 �
 ```
 
 `publish` runs on `v*.*.*` tags only (pushes to `main` run every other job but publish nothing). It pushes
-`ghcr.io/leon2378/brain-tumor-detection` tagged with the version, `major.minor`, the short SHA and `latest`. Each image comes with an SBOM and build
-provenance. Tags also build the `-gpu` image. [`codeql.yml`](.github/workflows/codeql.yml) scans the Python code and
-the workflows. Dependabot keeps actions, pip and Docker bases current. Actions are pinned to major version tags;
-pin them to commit SHAs if you need stricter supply-chain guarantees.
+`ghcr.io/leon2378/brain-tumor-detection` tagged with the version, `major.minor`, the short SHA and `latest`. Each
+image comes with an SBOM and build provenance. Tags also build the `-gpu` image.
+[`codeql.yml`](.github/workflows/codeql.yml) scans the Python code and the workflows.
+
+Dependabot keeps the actions and Docker base images current. It deliberately doesn't manage Python packages: it bumps
+lock-file pins one at a time, which breaks exact pairs such as pydantic and pydantic-core. Run `make upgrade`
+instead. Actions are pinned to major version tags; pin them to commit SHAs if you need stricter supply-chain
+guarantees.
 
 To **bake a trained model into the published image**, attach it to a GitHub release and point the workflow at it:
 

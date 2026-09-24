@@ -1,4 +1,6 @@
 version: 2
+# No `pip` entry on purpose: requirements/serve-*.txt are uv lock files, and Dependabot bumps their pins one at a
+# time, which breaks exact pairs such as pydantic/pydantic-core. Upgrade Python dependencies with `make upgrade`.
 updates:
   - package-ecosystem: github-actions
     directory: "/"
@@ -6,14 +8,6 @@ updates:
       interval: weekly
     groups:
       actions:
-        patterns: ["*"]
-
-  - package-ecosystem: pip
-    directory: "/"
-    schedule:
-      interval: weekly
-    groups:
-      python:
         patterns: ["*"]
 
   - package-ecosystem: docker
