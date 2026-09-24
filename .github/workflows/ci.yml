@@ -180,14 +180,15 @@ jobs:
           provenance: mode=max
           cache-from: type=gha
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.meta.outputs.version }}
             REVISION=${{ github.sha }}
       - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
-      # The CUDA image is large, so it is built for release tags only.
+      # The CUDA image is large, so it is built for release tags only. `steps.meta.outputs.version` is the
+      # tag without its "v" (v0.1.0 -> 0.1.0), matching the CPU image's tags.
       - name: Build and push the GPU image
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7
@@ -196,10 +197,10 @@ jobs:
           file: docker/Dockerfile.gpu
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-gpu
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}-gpu
             ${{ env.IMAGE_NAME }}:latest-gpu
           sbom: true
           provenance: mode=max
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ steps.meta.outputs.version }}
             REVISION=${{ github.sha }}
