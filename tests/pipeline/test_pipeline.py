@@ -77,11 +77,21 @@ def exported(trained: Path, workspace: dict[str, Path]) -> Path:
     out = workspace["root"] / "model"
     meta = export_model(trained, workspace["dataset"], out, REPO / "configs" / "export.yaml", imgsz=IMGSZ)
     assert set(meta["artifacts"]) == {"fp32", "fp16", "int8"}
+    assert meta["architecture"] == "yolo26n-seg"
     assert meta["layout"] in {"end2end", "raw"}
     assert 0.05 <= meta["thresholds"]["conf"] <= 0.95
     sizes = {p: a["bytes"] for p, a in meta["artifacts"].items()}
     assert sizes["int8"] < sizes["fp16"] < sizes["fp32"]
     return out
+
+
+def test_architecture_survives_a_resumed_run(trained: Path, tmp_path: Path) -> None:
+    from btd.export.pipeline import checkpoint_architecture
+
+    resumed = tmp_path / "weights" / "last.pt"  # what run_summary.json records after `resume=True`
+    resumed.parent.mkdir()
+    shutil.copyfile(trained, resumed)
+    assert checkpoint_architecture(resumed) == "yolo26n-seg"
 
 
 def test_engine_matches_ultralytics_on_same_onnx(exported: Path, workspace: dict[str, Path]) -> None:

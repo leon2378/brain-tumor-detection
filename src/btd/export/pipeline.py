@@ -73,6 +73,18 @@ def has_end2end_head(weights: str | Path) -> bool:
     return getattr(net.model[-1], "one2one_cv2", None) is not None
 
 
+def checkpoint_architecture(weights: str | Path) -> str | None:
+    """Architecture the checkpoint was built from (e.g. ``yolo26s-seg``), read from its own model config.
+
+    ``run_summary.json`` and the checkpoint's ``train_args`` only know the file training was started from, which is
+    ``.../last.pt`` for a resumed run.
+    """
+    from ultralytics import YOLO
+
+    yaml_file = (getattr(YOLO(str(weights)).model, "yaml", None) or {}).get("yaml_file")
+    return Path(str(yaml_file)).stem if yaml_file else None
+
+
 def choose_head(weights: str | Path, data_yaml: str | Path, imgsz: int, device: Any = None) -> dict[str, Any]:
     """Score both YOLO26 heads on the validation split and keep the better mask mAP50-95."""
     from btd.training.evaluate import ultralytics_metrics
@@ -195,7 +207,7 @@ def export_model(
 
     run_summary_file = weights.parent.parent / "run_summary.json"
     run_summary = read_json(run_summary_file) if run_summary_file.is_file() else {}
-    arch = Path(str(run_summary.get("model", weights.stem))).stem
+    arch = checkpoint_architecture(weights) or Path(str(run_summary.get("model", weights.stem))).stem
     meta = {
         "schema_version": 1,
         "name": name or f"brisc-{arch}",
