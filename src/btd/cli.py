@@ -228,6 +228,7 @@ def cmd_package(args: argparse.Namespace) -> int:
 
 def cmd_predict(args: argparse.Namespace) -> int:
     from btd.inference.engine import SegmentationEngine
+    from btd.inference.quality import input_warnings
     from btd.inference.visualize import draw_overlay
     from btd.utils import imread, imwrite
 
@@ -249,6 +250,7 @@ def cmd_predict(args: argparse.Namespace) -> int:
                 for d in pred.detections
             ],
             "timings_ms": {k: round(v, 1) for k, v in pred.timings_ms.items()},
+            "warnings": [{"code": w.code, "message": w.message} for w in input_warnings(img)],
         }
         print(json.dumps(result))
         if args.save_dir:

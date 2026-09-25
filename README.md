@@ -130,6 +130,11 @@ released model by [`scripts/make_ui_screenshots.py`](scripts/make_ui_screenshots
 `glioma 0.05` detection sits inside the expert mask: it's the upper part of the same tumour, so raising the
 threshold hides real tumour rather than noise.
 
+The page takes any image, and the model answers whatever you give it: a landscape photo comes back as "glioma 0.81".
+So colour images, which can't be MRI slices, get a warning above the prediction. That check is basic, and greyscale
+photos or other MRI sequences still get through. The [model card](MODEL_CARD.md#behaviour-outside-the-training-data)
+has the details, and what the model does with rotated, inverted, blurred and non-MRI inputs.
+
 ## API
 
 | Method | Path | Purpose |
@@ -158,6 +163,7 @@ Example response (illustrative values):
   "detections": [{"class_name": "meningioma", "confidence": 0.91, "box": {"x1": 301.2, "y1": 88.0, "x2": 371.9, "y2": 150.4},
                   "area_px": 3412, "area_fraction": 0.013, "polygons": [[[318, 90], [305, 104], "…"]]}],
   "timings_ms": {"preprocess_ms": 1.1, "inference_ms": 38.2, "postprocess_ms": 2.0, "total_ms": 41.3},
+  "warnings": [],
   "disclaimer": "Research/educational prototype. Not a medical device and not validated for clinical diagnosis."
 }
 ```
@@ -166,6 +172,9 @@ Configuration is through `BTD_*` environment variables (see [`.env.example`](.en
 `BTD_MODEL_PATH`, `BTD_PROVIDERS` (`cpu`, `cuda`, `tensorrt`, `auto`), `BTD_API_KEY`, `BTD_MAX_UPLOAD_MB`,
 `BTD_CORS_ORIGINS`, `BTD_GPU_MEM_LIMIT_MB` and `BTD_UI`. The `conf` query parameter only changes which detections are
 *shown*. The image-level decision always uses the calibrated threshold.
+
+`warnings` lists reasons to distrust a result. Currently the only one is `not_greyscale`, for colour images that are
+unlikely to be MRI slices; `/v1/predict/overlay` reports it in an `X-Input-Warnings` header instead.
 
 ## Docker
 
@@ -225,6 +234,7 @@ src/btd/
   training/    train.py (Ultralytics wrapper, 6 GB profile) · evaluate.py · metrics.py (numpy-only)
   export/      pipeline.py (head selection, ONNX, threshold tuning, model.json) · quantize.py (FP16 / INT8) · benchmark.py
   inference/   preprocess.py · postprocess.py (numpy decode + masks) · engine.py (ONNX Runtime) · visualize.py
+               quality.py (input checks, e.g. colour images)
   api/         app.py (FastAPI) · schemas.py · settings.py · static/ (web page and sample slices)
   cli.py       the `btd` command
 configs/       train.yaml (6 GB profile) · export.yaml (precisions, INT8 calibration, TensorRT)

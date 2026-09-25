@@ -76,6 +76,19 @@ def test_predict_healthy_jpeg(client: TestClient, black_image: np.ndarray) -> No
     assert r.json()["detections"] == []
 
 
+def test_colour_image_gets_a_warning(client: TestClient, bright_image: np.ndarray) -> None:
+    colour = bright_image.copy()
+    colour[..., 0], colour[..., 2] = 20, 220  # strongly red, like a photo rather than an MRI slice
+    r = client.post("/v1/predict", files={"file": ("photo.png", encode(colour), "image/png")})
+    assert r.status_code == 200
+    assert [w["code"] for w in r.json()["warnings"]] == ["not_greyscale"]
+    grey = client.post("/v1/predict", files={"file": ("slice.png", encode(bright_image), "image/png")})
+    assert grey.json()["warnings"] == []
+    overlay = client.post("/v1/predict/overlay", files={"file": ("photo.png", encode(colour), "image/png")})
+    assert overlay.headers["x-input-warnings"] == "not_greyscale"
+    assert 'btd_input_warnings_total{code="not_greyscale"} 2.0' in client.get("/metrics").text
+
+
 def test_overlay_png(client: TestClient, bright_image: np.ndarray) -> None:
     r = client.post("/v1/predict/overlay", files={"file": ("x.png", encode(bright_image), "image/png")})
     assert r.status_code == 200

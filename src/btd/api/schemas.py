@@ -45,6 +45,11 @@ class ModelSummary(BaseModel):
     provider: str
 
 
+class InputWarningOut(BaseModel):
+    code: str = Field(examples=["not_greyscale"])
+    message: str
+
+
 class PredictResponse(BaseModel):
     request_id: str
     model: ModelSummary
@@ -53,6 +58,10 @@ class PredictResponse(BaseModel):
     detections: list[DetectionOut]
     mask_png_base64: str | None = Field(None, description="union mask (PNG, 0/255) when include_mask=true")
     timings_ms: dict[str, float]
+    warnings: list[InputWarningOut] = Field(
+        default_factory=list,
+        description="reasons to distrust this result, e.g. a colour image that is unlikely to be an MRI slice",
+    )
     disclaimer: str
 
 

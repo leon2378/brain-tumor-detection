@@ -298,6 +298,10 @@
       : "Expert masks exist for the sample slices only.";
 
     const result = state.result;
+    const warnings = (result && result.warnings) || [];
+    $("input-warning").hidden = !warnings.length;
+    $("input-warning-text").textContent = warnings.map((w) => w.message).join(" ");
+
     const list = $("detections");
     const banner = $("banner");
     list.replaceChildren();

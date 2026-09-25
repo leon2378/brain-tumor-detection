@@ -49,6 +49,7 @@ from btd.api.schemas import (
     ErrorResponse,
     HealthResponse,
     ImageMeta,
+    InputWarningOut,
     ModelInfoResponse,
     ModelSummary,
     PredictResponse,
@@ -58,6 +59,7 @@ from btd.api.settings import Settings
 from btd.constants import DISCLAIMER
 from btd.inference.engine import ModelLoadError, SegmentationEngine
 from btd.inference.postprocess import mask_to_polygons
+from btd.inference.quality import InputWarning, input_warnings
 from btd.inference.types import Prediction
 from btd.inference.visualize import draw_overlay
 from btd.utils import setup_logging
@@ -128,6 +130,12 @@ class Metrics:
         )
         self.predictions = Counter(
             "btd_predictions_total", "Image-level decisions", ["label"], registry=self.registry
+        )
+        self.input_warnings = Counter(
+            "btd_input_warnings_total",
+            "Inputs flagged as unlikely MRI slices",
+            ["code"],
+            registry=self.registry,
         )
         self.inflight = Gauge("btd_inflight_inferences", "Inferences in progress", registry=self.registry)
         self.model_info = Gauge(
@@ -306,6 +314,13 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Image is too small (min side 32 px)")
         return img
 
+    def check_input(img: np.ndarray) -> list[InputWarning]:
+        found = input_warnings(img)
+        if state.metrics is not None:
+            for warning in found:
+                state.metrics.input_warnings.labels(warning.code).inc()
+        return found
+
     async def infer(engine: SegmentationEngine, img: np.ndarray, conf: float | None) -> Prediction:
         async with state.semaphore:
             if state.metrics is not None:
@@ -366,6 +381,7 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
         include_mask: Annotated[bool, Query(description="return the union mask as base64 PNG")] = False,
     ) -> PredictResponse:
         img = await read_image(file)
+        warnings = check_input(img)
         pred = await infer(engine, img, conf)
         h, w = pred.image_hw
         info = engine.info
@@ -404,6 +420,7 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
             detections=detections,
             mask_png_base64=mask_b64,
             timings_ms={k: round(v, 2) for k, v in pred.timings_ms.items()},
+            warnings=[InputWarningOut(code=w.code, message=w.message) for w in warnings],
             disclaimer=DISCLAIMER,
         )
 
@@ -420,15 +437,15 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
         conf: ConfQuery = None,
     ) -> Response:
         img = await read_image(file)
+        warnings = check_input(img)
         pred = await infer(engine, img, conf)
         ok, buf = cv2.imencode(".png", draw_overlay(img, pred))
         if not ok:  # pragma: no cover
             raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Could not encode overlay")
-        return Response(
-            content=buf.tobytes(),
-            media_type="image/png",
-            headers={"X-Decision": pred.decision.label, "X-Decision-Score": f"{pred.decision.score:.4f}"},
-        )
+        headers = {"X-Decision": pred.decision.label, "X-Decision-Score": f"{pred.decision.score:.4f}"}
+        if warnings:
+            headers["X-Input-Warnings"] = ",".join(w.code for w in warnings)
+        return Response(content=buf.tobytes(), media_type="image/png", headers=headers)
 
     if settings.ui:
         app.mount("/ui", StaticFiles(directory=STATIC_DIR), name="ui")
