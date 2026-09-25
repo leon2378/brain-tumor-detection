@@ -72,7 +72,7 @@ Dataset = "https://doi.org/10.5281/zenodo.17524350"
 where = ["src"]
 
 [tool.setuptools.package-data]
-btd = ["py.typed"]
+btd = ["py.typed", "api/static/*.*", "api/static/samples/*"]
 
 # ---------------------------------------------------------------------------------------------------------------------
 [tool.ruff]

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brain tumour detection</title>
+  <meta name="description" content="Detect and outline brain tumours on MRI slices with a YOLO26-seg model trained on BRISC 2025.">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/ui/app.css">
+  <script src="/ui/app.js" defer></script>
+</head>
+<body>
+<main class="card">
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/>
+        <circle cx="12" cy="12" r="3.5"/>
+      </svg>
+      <div>
+        <h1>Brain tumour detection</h1>
+        <p class="sub">Upload a T1 contrast-enhanced MRI slice</p>
+      </div>
+    </div>
+    <span id="model-badge" class="badge mono">connecting…</span>
+  </header>
+
+  <div class="grid">
+    <section aria-label="Image">
+      <div id="viewer" class="viewer">
+        <canvas id="canvas" role="img" aria-label="MRI slice with the predicted tumour outlines"></canvas>
+        <p id="viewer-empty" class="viewer-msg">Choose a sample slice or drop your own to start</p>
+        <p id="viewer-busy" class="viewer-msg busy" hidden>Analysing…</p>
+        <p id="banner" class="banner" hidden></p>
+      </div>
+      <label id="drop" class="drop" tabindex="0">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        <span class="drop-text">Drop a slice here or paste it</span>
+        <span class="btn">Choose file</span>
+        <input id="file" type="file" accept="image/png,image/jpeg,image/bmp,image/webp" hidden>
+      </label>
+      <p id="error" class="error" role="alert" hidden></p>
+      <form id="key-form" class="key-form" hidden>
+        <label for="api-key">API key</label>
+        <input id="api-key" type="password" autocomplete="off" spellcheck="false">
+        <button type="submit" class="btn">Use key</button>
+      </form>
+    </section>
+
+    <section class="side" aria-label="Result">
+      <p class="lab">Try a test slice</p>
+      <div id="samples" class="seg"></div>
+
+      <div class="result" aria-live="polite">
+        <p class="lab">Prediction</p>
+        <p id="label" class="label">—</p>
+        <div class="bar"><div id="bar-fill"></div></div>
+        <p id="score" class="small muted"></p>
+      </div>
+
+      <div class="control">
+        <label for="threshold">Threshold</label>
+        <input id="threshold" type="range" min="0.05" max="0.95" step="0.05" value="0.05">
+        <output id="threshold-out" for="threshold" class="mono">0.05</output>
+      </div>
+      <div class="toggles">
+        <label><input id="show-mask" type="checkbox" checked> Mask</label>
+        <label><input id="show-outline" type="checkbox" checked> Outline</label>
+        <label><input id="show-expert" type="checkbox" disabled> Expert mask</label>
+      </div>
+      <p id="expert-note" class="small muted">Expert masks exist for the sample slices only.</p>
+
+      <p class="lab">Detections</p>
+      <ul id="detections" class="dets"></ul>
+      <p id="timing" class="small faint"></p>
+    </section>
+  </div>
+
+  <p class="disclaimer" role="note">
+    <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span>Research prototype. Not a medical device and not validated for clinical diagnosis. Uploaded images are analysed in memory and not stored.</span>
+  </p>
+  <footer class="foot">
+    Sample slices from <a href="https://doi.org/10.5281/zenodo.17524350">BRISC 2025</a> (CC BY 4.0)
+    · <a href="/docs">API docs</a>
+    · <a href="https://github.com/leon2378/brain-tumor-detection">Source code</a>
+  </footer>
+</main>
+</body>
+</html>

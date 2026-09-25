@@ -37,6 +37,7 @@ class Settings(BaseSettings):
         default_factory=list, description='JSON list, e.g. ["http://localhost:5173"]'
     )
     enable_metrics: bool = True
+    ui: bool = Field(True, description="serve the web page at / and its assets at /ui (off for API-only use)")
 
     # Logging
     log_level: str = "INFO"

@@ -2,6 +2,8 @@
 
 Endpoints
 ---------
+``GET  /``                    web page for browsers (``BTD_UI``); a small JSON index for API clients
+``GET  /ui/...``              the page's script, styles and sample slices
 ``GET  /health``              liveness (process is up)
 ``GET  /ready``               readiness (model loaded + warmed up) — 503 otherwise
 ``GET  /v1/model``            model card: version, precision, classes, threshold, checksum, provider
@@ -11,7 +13,7 @@ Endpoints
 
 Production concerns handled here: request IDs, JSON access logs, upload size/type/pixel limits,
 bounded inference concurrency (inference runs in a worker thread, never on the event loop),
-optional API-key auth, CORS for a future frontend, and no stack traces leaked to clients.
+optional API-key auth, CORS for frontends hosted elsewhere, and no stack traces leaked to clients.
 """
 
 import asyncio
@@ -25,6 +27,7 @@ import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Annotated, Any
 
 import cv2
@@ -33,7 +36,8 @@ from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, Uploa
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -70,6 +74,17 @@ ALLOWED_CONTENT_TYPES = {
     "application/octet-stream",
 }
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+STATIC_DIR = Path(__file__).with_name("static")
+# The page loads nothing from other origins and only talks to this API, so it can be locked down tightly.
+UI_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; "
+        "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "Vary": "Accept",
+}
 
 
 ConfQuery = Annotated[
@@ -308,8 +323,13 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
 
     # ------------------------------------------------------------------------------------------ routes
     @app.get("/", include_in_schema=False)
-    async def root() -> dict[str, str]:
-        return {"name": "brain-tumor-detection", "version": __version__, "docs": "/docs"}
+    async def root(request: Request) -> Response:
+        if settings.ui and "text/html" in request.headers.get("accept", ""):
+            return FileResponse(STATIC_DIR / "index.html", headers=UI_HEADERS)
+        return JSONResponse(
+            {"name": "brain-tumor-detection", "version": __version__, "docs": "/docs"},
+            headers={"Vary": "Accept"},
+        )
 
     @app.get("/health", response_model=HealthResponse, tags=["ops"])
     async def health() -> HealthResponse:
@@ -409,6 +429,9 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
             media_type="image/png",
             headers={"X-Decision": pred.decision.label, "X-Decision-Score": f"{pred.decision.score:.4f}"},
         )
+
+    if settings.ui:
+        app.mount("/ui", StaticFiles(directory=STATIC_DIR), name="ui")
 
     if settings.enable_metrics:
 

@@ -2,7 +2,7 @@
 
     python scripts/smoke_test.py http://localhost:8000 [--expect-dummy] [--api-key KEY]
 
-Checks /health, /ready, /v1/model, /metrics and a /v1/predict round-trip with generated PNGs.
+Checks /health, /ready, /v1/model, /metrics, the web page and a /v1/predict round-trip with generated PNGs.
 With --expect-dummy it also asserts the decisions of the btd.testing dummy model (bright → tumour, black → none).
 """
 
@@ -104,6 +104,13 @@ def main() -> int:
 
     status, body = request(f"{base}/v1/predict", b"not multipart", {"Content-Type": "text/plain"})
     checks.append(("POST /v1/predict (bad body) → 4xx", 400 <= status < 500, str(status)))
+
+    status, body = request(f"{base}/", headers={"Accept": "text/html"})
+    checks.append(
+        ("GET / (browser) → web page", status == 200 and b"Brain tumour detection" in body, str(status))
+    )
+    status, body = request(f"{base}/ui/app.js")
+    checks.append(("GET /ui/app.js", status == 200 and b"/v1/predict" in body, f"{len(body)} bytes"))
 
     status, body = request(f"{base}/metrics")
     checks.append(

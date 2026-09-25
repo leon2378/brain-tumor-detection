@@ -99,7 +99,7 @@ btd export                               # newest runs/segment/*/weights/best.pt
 btd evaluate --map                       # test-set report for FP32/FP16/INT8 → reports/
 btd benchmark --providers cpu cuda       # latency, size, GPU memory → reports/benchmark.md
 btd package --precision int8             # → models/model.onnx + models/model.json
-btd serve --model models/model.onnx      # http://127.0.0.1:8000/docs
+btd serve --model models/model.onnx      # web page at http://127.0.0.1:8000, API docs at /docs
 ```
 
 Optional: see how leaky the old Kaggle dataset is:
@@ -108,10 +108,20 @@ Optional: see how leaky the old Kaggle dataset is:
 btd data audit --data "..\Brain Tumor MRI Data" --out reports/audit-kaggle
 ```
 
+## Web page
+
+Open http://127.0.0.1:8000 in a browser. Drop an MRI slice onto the page, paste one, or try one of the four sample
+slices from the BRISC test split. The page draws the predicted tumour outlines returned by `/v1/predict`, and for the
+samples it can overlay the expert mask too. Moving the threshold slider or the mask toggles updates the result
+instantly in the browser, without another request. It's plain HTML, CSS and JavaScript served by the API itself
+([`src/btd/api/static/`](src/btd/api/static/)): no build step, nothing loaded from other sites, and a strict
+Content Security Policy. Set `BTD_UI=false` for API-only deployments.
+
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/` | the web page in a browser; a small JSON index for API clients |
 | `GET` | `/health` | liveness |
 | `GET` | `/ready` | readiness: model loaded and warmed up (503 otherwise) |
 | `GET` | `/v1/model` | model name, version, precision, classes, threshold, SHA-256, execution provider |
@@ -141,14 +151,14 @@ Example response (illustrative values):
 
 Configuration is through `BTD_*` environment variables (see [`.env.example`](.env.example)). The main ones are
 `BTD_MODEL_PATH`, `BTD_PROVIDERS` (`cpu`, `cuda`, `tensorrt`, `auto`), `BTD_API_KEY`, `BTD_MAX_UPLOAD_MB`,
-`BTD_CORS_ORIGINS` and `BTD_GPU_MEM_LIMIT_MB`. The `conf` query parameter only changes which detections are
+`BTD_CORS_ORIGINS`, `BTD_GPU_MEM_LIMIT_MB` and `BTD_UI`. The `conf` query parameter only changes which detections are
 *shown*. The image-level decision always uses the calibrated threshold.
 
 ## Docker
 
 ```bash
 btd package --precision int8                        # CPU model → ./models
-docker compose up --build                           # http://localhost:8000/docs
+docker compose up --build                           # web page at http://localhost:8000, API docs at /docs
 btd package --precision fp16 --dest models-gpu      # GPU model → ./models-gpu
 docker compose --profile gpu up --build             # http://localhost:8001 (needs NVIDIA Container Toolkit)
 ```
@@ -202,13 +212,14 @@ src/btd/
   training/    train.py (Ultralytics wrapper, 6 GB profile) · evaluate.py · metrics.py (numpy-only)
   export/      pipeline.py (head selection, ONNX, threshold tuning, model.json) · quantize.py (FP16 / INT8) · benchmark.py
   inference/   preprocess.py · postprocess.py (numpy decode + masks) · engine.py (ONNX Runtime) · visualize.py
-  api/         app.py (FastAPI) · schemas.py · settings.py
+  api/         app.py (FastAPI) · schemas.py · settings.py · static/ (web page and sample slices)
   cli.py       the `btd` command
 configs/       train.yaml (6 GB profile) · export.yaml (precisions, INT8 calibration, TensorRT)
 docker/        Dockerfile (CPU) · Dockerfile.gpu (CUDA via pip wheels)
 requirements/  hash-locked serving dependencies
 tests/         unit/ · api/ · pipeline/ (end-to-end, `-m pipeline`)
 scripts/       smoke_test.py (API check used by CI) · lock.py (uv lock files) · make_readme_figure.py
+               make_demo_samples.py (the web page's sample slices)
 docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md · images/ (README figures)
 ```
 

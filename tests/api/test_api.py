@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import re
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -145,6 +146,30 @@ def test_missing_model_reports_not_ready() -> None:
 def test_require_model_fails_fast() -> None:
     with pytest.raises(Exception, match="not found"), _client(None, require_model=True):
         pass
+
+
+def test_web_page(client: TestClient) -> None:
+    page = client.get("/", headers={"Accept": "text/html,application/xhtml+xml"})
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert "<title>Brain tumour detection</title>" in page.text
+    assert "script-src 'self'" in page.headers["content-security-policy"]
+    assert "Not a medical device" in page.text
+    # every asset the page references is served
+    for path in re.findall(r'(?:src|href)="(/ui/[^"]+)"', page.text):
+        assert client.get(path).status_code == 200, path
+
+    samples = client.get("/ui/samples/samples.json").json()["samples"]
+    assert {s["label"] for s in samples} == {"glioma", "meningioma", "pituitary", "no_tumor"}
+    for s in samples:
+        img = client.get(f"/ui/samples/{s['file']}")
+        assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg"
+        assert bool(s["expert_polygons"]) == (s["label"] != "no_tumor")
+
+
+def test_web_page_can_be_turned_off(dummy_model: Path) -> None:
+    with _client(dummy_model, ui=False) as c:
+        assert c.get("/", headers={"Accept": "text/html"}).json()["docs"] == "/docs"
+        assert c.get("/ui/app.js").status_code == 404
 
 
 def test_cors(dummy_model: Path) -> None:

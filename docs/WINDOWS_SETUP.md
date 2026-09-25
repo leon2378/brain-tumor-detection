@@ -113,10 +113,12 @@ Copy the numbers into the Results table in `README.md` and into `MODEL_CARD.md`.
 
 ```powershell
 btd package --precision int8              # → models\model.onnx + models\model.json
-btd serve --model models\model.onnx       # http://127.0.0.1:8000/docs
+btd serve --model models\model.onnx       # web page at http://127.0.0.1:8000, API docs at /docs
 ```
 
-In a second terminal (use `curl.exe`, because in PowerShell `curl` is an alias for `Invoke-WebRequest`):
+Open http://127.0.0.1:8000 in your browser and try a sample slice, or drop in one of your own.
+
+To call the API directly instead, use a second terminal (use `curl.exe`, because in PowerShell `curl` is an alias for `Invoke-WebRequest`):
 
 ```powershell
 $img = Get-ChildItem data\processed\brisc-yolo\images\test\*_gl_*.jpg | Select-Object -First 1
