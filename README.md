@@ -110,12 +110,25 @@ btd data audit --data "..\Brain Tumor MRI Data" --out reports/audit-kaggle
 
 ## Web page
 
+![The web page with the glioma sample: the predicted tumour mask and the dashed expert mask on the MRI slice, the prediction and its confidence, the threshold slider and mask toggles, and the list of detections](docs/images/web-page.png)
+
+<p align="center">
+  <img src="docs/images/web-page-dark.png" height="400" alt="The web page in dark mode with the meningioma sample">
+  <img src="docs/images/web-page-phone.png" height="400" alt="The web page on a phone-sized screen with the pituitary sample">
+</p>
+
 Open http://127.0.0.1:8000 in a browser. Drop an MRI slice onto the page, paste one, or try one of the four sample
 slices from the BRISC test split. The page draws the predicted tumour outlines returned by `/v1/predict`, and for the
 samples it can overlay the expert mask too. Moving the threshold slider or the mask toggles updates the result
 instantly in the browser, without another request. It's plain HTML, CSS and JavaScript served by the API itself
 ([`src/btd/api/static/`](src/btd/api/static/)): no build step, nothing loaded from other sites, and a strict
 Content Security Policy. Set `BTD_UI=false` for API-only deployments.
+
+Links open a sample directly, which is handy for demos: `/?sample=glioma&expert=1&threshold=0.1` loads the glioma
+slice with the expert mask shown and the threshold at 0.10. The screenshots above were taken that way from the
+released model by [`scripts/make_ui_screenshots.py`](scripts/make_ui_screenshots.py). In the glioma one, the weak
+`glioma 0.05` detection sits inside the expert mask: it's the upper part of the same tumour, so raising the
+threshold hides real tumour rather than noise.
 
 ## API
 
@@ -219,7 +232,7 @@ docker/        Dockerfile (CPU) · Dockerfile.gpu (CUDA via pip wheels)
 requirements/  hash-locked serving dependencies
 tests/         unit/ · api/ · pipeline/ (end-to-end, `-m pipeline`)
 scripts/       smoke_test.py (API check used by CI) · lock.py (uv lock files) · make_readme_figure.py
-               make_demo_samples.py (the web page's sample slices)
+               make_demo_samples.py (the web page's sample slices) · make_ui_screenshots.py
 docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md · images/ (README figures)
 ```
 
