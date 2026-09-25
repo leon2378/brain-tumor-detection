@@ -9,8 +9,9 @@
     python scripts/sagemaker.py delete [--everything]
 
 push    copies the linux/amd64 image of ghcr.io/leon2378/brain-tumor-detection:<tag> into ECR, because SageMaker only
-        runs images from ECR in your own account and region. It copies the single image manifest, not the multi-part
-        index GHCR serves (SBOM and provenance), which SageMaker rejects.
+        runs images from ECR in your own account and region. SageMaker also rejects both the multi-part index GHCR
+        serves (image plus SBOM and provenance) and OCI image manifests, so the image is re-packed as a plain Docker
+        v2 image: same layers, entrypoint, user and environment, only the packaging format differs.
 deploy  creates the model, a serverless endpoint configuration and the endpoint, then waits until it's InService.
         The container runs as `docker run IMAGE serve` with BTD_SAGEMAKER=true and BTD_PORT=8080.
 invoke  sends an MRI slice (default: the glioma sample) and prints the decision and the timings.
@@ -94,19 +95,33 @@ def cmd_push(args: argparse.Namespace) -> None:
     digest = amd64_digest(source)
     target = f"{registry}/{args.repository}:{args.tag}"
     print(f"copying {source} (linux/amd64, {digest[:19]}...) to {target}")
+    # A build that is only `FROM` the published image keeps its layers and config unchanged; exporting it with
+    # oci-mediatypes=false and no attestations yields the Docker v2 manifest SageMaker accepts.
     run(
         [
             "docker",
             "buildx",
-            "imagetools",
-            "create",
-            "--prefer-index=false",
-            "-t",
-            target,
-            f"{SOURCE_IMAGE}@{digest}",
-        ]
+            "build",
+            "--platform",
+            "linux/amd64",
+            "--provenance=false",
+            "--sbom=false",
+            "--output",
+            f"type=image,name={target},push=true,oci-mediatypes=false",
+            "-",
+        ],
+        input=f"FROM {SOURCE_IMAGE}@{digest}\n",
     )
+    check_manifest(ecr, args.repository, args.tag)
     print(f"pushed {target}")
+
+
+def check_manifest(ecr: Any, repository: str, tag: str) -> None:
+    """Fail early, before `deploy`, if the pushed image isn't in a format SageMaker accepts."""
+    image = ecr.batch_get_image(repositoryName=repository, imageIds=[{"imageTag": tag}])["images"][0]
+    media_type = image.get("imageManifestMediaType") or json.loads(image["imageManifest"]).get("mediaType")
+    if media_type != "application/vnd.docker.distribution.manifest.v2+json":
+        sys.exit(f"pushed image has manifest type {media_type}, which SageMaker rejects")
 
 
 def cmd_deploy(args: argparse.Namespace) -> None:
