@@ -10,6 +10,7 @@ import argparse
 import contextlib
 import json
 import logging
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -259,8 +260,6 @@ def cmd_predict(args: argparse.Namespace) -> int:
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
-    import os
-
     import uvicorn
 
     if args.model:
@@ -382,8 +381,13 @@ def build_parser() -> argparse.ArgumentParser:
     pd.set_defaults(func=cmd_predict)
 
     sv = sub.add_parser("serve", help="start the FastAPI service (settings via BTD_* env vars)")
-    sv.add_argument("--host", default="127.0.0.1")
-    sv.add_argument("--port", type=int, default=8000)
+    # Env defaults let a container start with a bare `serve`, which is how SageMaker runs it.
+    sv.add_argument(
+        "--host", default=os.environ.get("BTD_HOST", "127.0.0.1"), help="default: $BTD_HOST or 127.0.0.1"
+    )
+    sv.add_argument(
+        "--port", type=int, default=int(os.environ.get("BTD_PORT", "8000")), help="default: $BTD_PORT or 8000"
+    )
     sv.add_argument("--workers", type=int, default=1)
     sv.add_argument("--model", default=None, help="shortcut for BTD_MODEL_PATH")
     sv.add_argument("--forwarded-allow-ips", default="127.0.0.1")

@@ -185,6 +185,42 @@ def test_web_page_can_be_turned_off(dummy_model: Path) -> None:
         assert c.get("/ui/app.js").status_code == 404
 
 
+def test_sagemaker_routes(dummy_model: Path, bright_image: np.ndarray) -> None:
+    with _client(dummy_model, sagemaker=True) as c:
+        assert c.get("/ping").status_code == 200
+        r = c.post("/invocations", content=encode(bright_image), headers={"Content-Type": "image/png"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["decision"]["label"] == "meningioma"
+        assert body["image"] == {"width": 320, "height": 240} and body["detections"][0]["polygons"]
+        assert body["warnings"] == [] and body["request_id"]
+        # the content type AWS suggests for images
+        x_image = c.post(
+            "/invocations", content=encode(bright_image), headers={"Content-Type": "application/x-image"}
+        )
+        assert x_image.status_code == 200
+        assert (
+            c.post("/invocations", content=b"not an image", headers={"Content-Type": "image/png"}).status_code
+            == 400
+        )
+        assert (
+            c.post("/invocations", content=b"{}", headers={"Content-Type": "application/json"}).status_code
+            == 415
+        )
+
+
+def test_sagemaker_ping_reports_missing_model() -> None:
+    with _client(None, sagemaker=True) as c:
+        assert c.get("/ping").status_code == 503
+
+
+def test_sagemaker_routes_are_off_by_default(client: TestClient, bright_image: np.ndarray) -> None:
+    assert client.get("/ping").status_code == 404
+    assert client.post(
+        "/invocations", content=encode(bright_image), headers={"Content-Type": "image/png"}
+    ).status_code in {404, 405}
+
+
 def test_cors(dummy_model: Path) -> None:
     with _client(dummy_model, cors_origins=["http://localhost:5173"]) as c:
         r = c.options(

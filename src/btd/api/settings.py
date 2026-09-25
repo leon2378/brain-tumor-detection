@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     )
     enable_metrics: bool = True
     ui: bool = Field(True, description="serve the web page at / and its assets at /ui (off for API-only use)")
+    sagemaker: bool = Field(False, description="add SageMaker's /ping and /invocations routes")
 
     # Logging
     log_level: str = "INFO"

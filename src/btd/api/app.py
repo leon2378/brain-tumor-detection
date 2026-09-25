@@ -10,6 +10,7 @@ Endpoints
 ``POST /v1/predict``          multipart image → decision + detections (+ polygons / mask)
 ``POST /v1/predict/overlay``  multipart image → PNG with masks, boxes and decision drawn
 ``GET  /metrics``             Prometheus metrics
+``GET  /ping``, ``POST /invocations``  SageMaker's container contract (only with ``BTD_SAGEMAKER=true``)
 
 Production concerns handled here: request IDs, JSON access logs, upload size/type/pixel limits,
 bounded inference concurrency (inference runs in a worker thread, never on the event loop),
@@ -73,6 +74,7 @@ ALLOWED_CONTENT_TYPES = {
     "image/x-ms-bmp",
     "image/tiff",
     "image/webp",
+    "application/x-image",  # what AWS suggests for images sent to a SageMaker endpoint
     "application/octet-stream",
 }
 _REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
@@ -293,11 +295,26 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, state.load_error or "Model not loaded")
         return state.engine
 
-    async def read_image(file: UploadFile) -> np.ndarray:
-        ctype = (file.content_type or "application/octet-stream").split(";")[0].strip().lower()
+    def check_content_type(content_type: str | None) -> None:
+        ctype = (content_type or "application/octet-stream").split(";")[0].strip().lower()
         if ctype not in ALLOWED_CONTENT_TYPES:
             raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, f"Unsupported content type {ctype}")
-        data = await file.read(settings.max_upload_bytes + 1)
+
+    async def read_image(file: UploadFile) -> np.ndarray:
+        check_content_type(file.content_type)
+        return decode_image(await file.read(settings.max_upload_bytes + 1))
+
+    async def read_body_image(request: Request) -> np.ndarray:
+        """The raw request body as an image (SageMaker sends the file itself, not a form)."""
+        check_content_type(request.headers.get("content-type"))
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > settings.max_upload_bytes:
+                break
+        return decode_image(bytes(data))
+
+    def decode_image(data: bytes) -> np.ndarray:
         if len(data) > settings.max_upload_bytes:
             raise HTTPException(413, f"Upload exceeds {settings.max_upload_mb:g} MB")
         if not data:
@@ -335,6 +352,55 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
         if state.metrics is not None:
             state.metrics.predictions.labels(pred.decision.label).inc()
         return pred
+
+    def prediction_response(
+        request: Request,
+        engine: SegmentationEngine,
+        pred: Prediction,
+        warnings: list[InputWarning],
+        include_polygons: bool = True,
+        include_mask: bool = False,
+    ) -> PredictResponse:
+        h, w = pred.image_hw
+        info = engine.info
+        detections = [
+            DetectionOut(
+                class_id=d.class_id,
+                class_name=d.class_name,
+                confidence=round(d.confidence, 4),
+                box=Box(
+                    x1=round(d.box[0], 1), y1=round(d.box[1], 1), x2=round(d.box[2], 1), y2=round(d.box[3], 1)
+                ),
+                area_px=d.area_px,
+                area_fraction=round(d.area_px / float(h * w), 6),
+                polygons=mask_to_polygons(d.mask, d.mask_origin)
+                if include_polygons and d.mask is not None
+                else None,
+            )
+            for d in pred.detections
+        ]
+        mask_b64 = None
+        if include_mask:
+            ok, buf = cv2.imencode(".png", pred.union_mask().astype(np.uint8) * 255)
+            mask_b64 = base64.b64encode(buf.tobytes()).decode("ascii") if ok else None
+        return PredictResponse(
+            request_id=request.state.request_id,
+            model=ModelSummary(
+                name=info.name, version=info.version, precision=info.precision, provider=info.providers[0]
+            ),
+            image=ImageMeta(width=w, height=h),
+            decision=DecisionOut(
+                label=pred.decision.label,
+                score=round(pred.decision.score, 4),
+                threshold=pred.decision.threshold,
+                tumor_detected=pred.decision.tumor_detected,
+            ),
+            detections=detections,
+            mask_png_base64=mask_b64,
+            timings_ms={k: round(v, 2) for k, v in pred.timings_ms.items()},
+            warnings=[InputWarningOut(code=w.code, message=w.message) for w in warnings],
+            disclaimer=DISCLAIMER,
+        )
 
     # ------------------------------------------------------------------------------------------ routes
     @app.get("/", include_in_schema=False)
@@ -383,46 +449,7 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
         img = await read_image(file)
         warnings = check_input(img)
         pred = await infer(engine, img, conf)
-        h, w = pred.image_hw
-        info = engine.info
-        detections = [
-            DetectionOut(
-                class_id=d.class_id,
-                class_name=d.class_name,
-                confidence=round(d.confidence, 4),
-                box=Box(
-                    x1=round(d.box[0], 1), y1=round(d.box[1], 1), x2=round(d.box[2], 1), y2=round(d.box[3], 1)
-                ),
-                area_px=d.area_px,
-                area_fraction=round(d.area_px / float(h * w), 6),
-                polygons=mask_to_polygons(d.mask, d.mask_origin)
-                if include_polygons and d.mask is not None
-                else None,
-            )
-            for d in pred.detections
-        ]
-        mask_b64 = None
-        if include_mask:
-            ok, buf = cv2.imencode(".png", pred.union_mask().astype(np.uint8) * 255)
-            mask_b64 = base64.b64encode(buf.tobytes()).decode("ascii") if ok else None
-        return PredictResponse(
-            request_id=request.state.request_id,
-            model=ModelSummary(
-                name=info.name, version=info.version, precision=info.precision, provider=info.providers[0]
-            ),
-            image=ImageMeta(width=w, height=h),
-            decision=DecisionOut(
-                label=pred.decision.label,
-                score=round(pred.decision.score, 4),
-                threshold=pred.decision.threshold,
-                tumor_detected=pred.decision.tumor_detected,
-            ),
-            detections=detections,
-            mask_png_base64=mask_b64,
-            timings_ms={k: round(v, 2) for k, v in pred.timings_ms.items()},
-            warnings=[InputWarningOut(code=w.code, message=w.message) for w in warnings],
-            disclaimer=DISCLAIMER,
-        )
+        return prediction_response(request, engine, pred, warnings, include_polygons, include_mask)
 
     @app.post(
         "/v1/predict/overlay",
@@ -446,6 +473,33 @@ def create_app(settings: Settings | None = None, engine: SegmentationEngine | No
         if warnings:
             headers["X-Input-Warnings"] = ",".join(w.code for w in warnings)
         return Response(content=buf.tobytes(), media_type="image/png", headers=headers)
+
+    if settings.sagemaker:
+        # SageMaker's container contract: GET /ping for health checks and POST /invocations with the raw image as
+        # the request body. Only added when asked for: on SageMaker, AWS authenticates every call before it reaches
+        # the container, but anywhere else /invocations would just be a second way in.
+        @app.get("/ping", include_in_schema=False)
+        async def ping() -> Response:
+            return Response(status_code=status.HTTP_200_OK if state.engine is not None else 503)
+
+        @app.post(
+            "/invocations",
+            response_model=PredictResponse,
+            tags=["sagemaker"],
+            dependencies=[Depends(require_api_key)],
+            responses={
+                400: {"model": ErrorResponse},
+                413: {"model": ErrorResponse},
+                415: {"model": ErrorResponse},
+            },
+        )
+        async def invocations(
+            request: Request, engine: Annotated[SegmentationEngine, Depends(require_engine)]
+        ) -> PredictResponse:
+            img = await read_body_image(request)
+            warnings = check_input(img)
+            pred = await infer(engine, img, None)
+            return prediction_response(request, engine, pred, warnings)
 
     if settings.ui:
         app.mount("/ui", StaticFiles(directory=STATIC_DIR), name="ui")

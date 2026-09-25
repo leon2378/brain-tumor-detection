@@ -115,12 +115,21 @@ jobs:
           test "$(docker exec btd-ci id -u)" = "10001"
       - name: Smoke test the API
         run: python scripts/smoke_test.py http://localhost:8000 --expect-dummy
+      - name: Smoke test as SageMaker runs it (`docker run IMAGE serve`, port 8080)
+        run: |
+          docker run -d --name btd-ci-sagemaker \
+            -e BTD_SAGEMAKER=true -e BTD_PORT=8080 \
+            -v "$PWD/ci-models:/app/models:ro" \
+            -p 8080:8080 brain-tumor-detection:ci serve
+          python scripts/smoke_test.py http://localhost:8080 --expect-dummy --sagemaker
       - name: Container logs
         if: always()
-        run: docker logs btd-ci || true
-      - name: Stop the container
+        run: |
+          docker logs btd-ci || true
+          docker logs btd-ci-sagemaker || true
+      - name: Stop the containers
         if: always()
-        run: docker rm -f btd-ci || true
+        run: docker rm -f btd-ci btd-ci-sagemaker || true
       - name: Trivy scan (HIGH/CRITICAL, fixable only)
         run: |
           docker run --rm \

@@ -23,6 +23,18 @@ def test_train_overrides_are_collected() -> None:
     assert args.overrides == ["epochs=3", "batch=8"]
 
 
+def test_serve_host_and_port_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BTD_HOST", raising=False)
+    monkeypatch.delenv("BTD_PORT", raising=False)
+    args = build_parser().parse_args(["serve"])
+    assert (args.host, args.port) == ("127.0.0.1", 8000)
+    monkeypatch.setenv("BTD_HOST", "0.0.0.0")  # what the Docker images set
+    monkeypatch.setenv("BTD_PORT", "8080")  # what SageMaker needs
+    args = build_parser().parse_args(["serve"])
+    assert (args.host, args.port) == ("0.0.0.0", 8080)
+    assert build_parser().parse_args(["serve", "--port", "9000"]).port == 9000  # a flag still wins
+
+
 def test_predict_and_package(dummy_model: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     img = tmp_path / "in put.png"
     imwrite(img, np.full((100, 120, 3), 130, np.uint8))

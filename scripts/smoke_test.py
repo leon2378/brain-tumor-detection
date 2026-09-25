@@ -1,9 +1,11 @@
 """Black-box smoke test for a running API (stdlib only — used by CI against the Docker container).
 
-    python scripts/smoke_test.py http://localhost:8000 [--expect-dummy] [--api-key KEY]
+    python scripts/smoke_test.py http://localhost:8000 [--expect-dummy] [--api-key KEY] [--sagemaker]
 
 Checks /health, /ready, /v1/model, /metrics, the web page and a /v1/predict round-trip with generated PNGs.
 With --expect-dummy it also asserts the decisions of the btd.testing dummy model (bright → tumour, black → none).
+With --sagemaker it also checks SageMaker's /ping and a raw-body /invocations call (container started with
+BTD_SAGEMAKER=true).
 """
 
 from __future__ import annotations
@@ -69,6 +71,7 @@ def main() -> int:
     ap.add_argument("--expect-dummy", action="store_true")
     ap.add_argument("--api-key")
     ap.add_argument("--wait", type=float, default=60.0, help="seconds to wait for /ready")
+    ap.add_argument("--sagemaker", action="store_true", help="also check /ping and /invocations")
     args = ap.parse_args()
     base = args.base_url.rstrip("/")
 
@@ -111,6 +114,16 @@ def main() -> int:
     )
     status, body = request(f"{base}/ui/app.js")
     checks.append(("GET /ui/app.js", status == 200 and b"/v1/predict" in body, f"{len(body)} bytes"))
+
+    if args.sagemaker:
+        status, _ = request(f"{base}/ping")
+        checks.append(("GET /ping (SageMaker)", status == 200, str(status)))
+        status, body = request(f"{base}/invocations", png(256, 200, 140), {"Content-Type": "image/png"})
+        pred = json.loads(body or b"{}")
+        ok = status == 200 and pred.get("image") == {"width": 256, "height": 200}
+        if args.expect_dummy:
+            ok = ok and pred["decision"]["label"] == "meningioma"
+        checks.append(("POST /invocations (raw PNG)", ok, json.dumps(pred.get("decision"))))
 
     status, body = request(f"{base}/metrics")
     checks.append(

@@ -31,7 +31,9 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONUNBUFFERED=1 \
     BTD_MODEL_PATH=/app/models/model.onnx \
     BTD_PROVIDERS=cpu \
-    BTD_LOG_JSON=true
+    BTD_LOG_JSON=true \
+    BTD_HOST=0.0.0.0 \
+    BTD_PORT=8000
 RUN groupadd --system --gid 10001 app \
  && useradd --system --uid 10001 --gid app --home-dir /app --shell /usr/sbin/nologin app
 WORKDIR /app
@@ -41,5 +43,7 @@ COPY --chown=app:app models/ /app/models/
 USER 10001:10001
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD ["python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
-CMD ["btd", "serve", "--host", "0.0.0.0", "--port", "8000"]
+  CMD ["python", "-c", "import os, sys, urllib.request; url = f'http://127.0.0.1:{os.environ.get(\"BTD_PORT\", \"8000\")}/health'; sys.exit(0 if urllib.request.urlopen(url, timeout=4).status == 200 else 1)"]
+# `docker run IMAGE` serves on BTD_PORT. SageMaker runs `docker run IMAGE serve` and sets BTD_PORT=8080.
+ENTRYPOINT ["btd"]
+CMD ["serve"]
