@@ -49,9 +49,9 @@
       const r = await fetch("/ui/samples/samples.json");
       if (r.ok) ({ samples } = await r.json());
     } catch {
-      return; // samples are optional
+      return []; // samples are optional
     }
-    for (const sample of samples) {
+    return samples.map((sample) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "btn";
@@ -59,7 +59,23 @@
       button.setAttribute("aria-pressed", "false");
       button.addEventListener("click", () => runSample(sample, button));
       $("samples").append(button);
+      return { sample, button };
+    });
+  }
+
+  // Shareable links such as /?sample=glioma&expert=1&threshold=0.1 (also used for the README screenshots).
+  function applyLinkParams(samples) {
+    const params = new URLSearchParams(window.location.search);
+    const t = Number(params.get("threshold"));
+    const slider = $("threshold");
+    if (params.has("threshold") && t >= Number(slider.min) && t <= Number(slider.max)) {
+      slider.value = String(t);
+      updateThresholdOut();
     }
+    if (params.get("expert") === "1") state.wantExpert = true;
+    const wanted = (params.get("sample") || "").toLowerCase();
+    const match = samples.find(({ sample }) => [sample.label, sample.title.toLowerCase()].includes(wanted));
+    if (match) runSample(match.sample, match.button);
   }
 
   function setPressed(active) {
@@ -395,8 +411,8 @@
     new ResizeObserver(() => render()).observe($("viewer"));
 
     render();
-    loadModel();
-    loadSamples();
+    // The model info sets the slider's range, so link parameters are applied once both have loaded.
+    Promise.all([loadModel(), loadSamples()]).then(([, samples]) => applyLinkParams(samples));
   }
 
   init();
