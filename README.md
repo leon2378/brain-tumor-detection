@@ -146,6 +146,7 @@ has the details, and what the model does with rotated, inverted, blurred and non
 | `POST` | `/v1/predict` | multipart `file` → decision + detections (`?include_mask=true`, `?include_polygons=false`, `?conf=`) |
 | `POST` | `/v1/predict/overlay` | multipart `file` → PNG with masks, boxes and decision |
 | `GET` | `/metrics` | Prometheus metrics |
+| `GET` / `POST` | `/ping` / `/invocations` | SageMaker's health check and raw-body prediction, only with `BTD_SAGEMAKER=true` |
 
 ```bash
 curl -F "file=@slice.jpg" http://localhost:8000/v1/predict
@@ -170,7 +171,8 @@ Example response (illustrative values):
 
 Configuration is through `BTD_*` environment variables (see [`.env.example`](.env.example)). The main ones are
 `BTD_MODEL_PATH`, `BTD_PROVIDERS` (`cpu`, `cuda`, `tensorrt`, `auto`), `BTD_API_KEY`, `BTD_MAX_UPLOAD_MB`,
-`BTD_CORS_ORIGINS`, `BTD_GPU_MEM_LIMIT_MB` and `BTD_UI`. The `conf` query parameter only changes which detections are
+`BTD_CORS_ORIGINS`, `BTD_GPU_MEM_LIMIT_MB`, `BTD_UI` and `BTD_SAGEMAKER`. `btd serve` also takes its host and port
+from `BTD_HOST` and `BTD_PORT` when no flags are given. The `conf` query parameter only changes which detections are
 *shown*. The image-level decision always uses the calibrated threshold.
 
 `warnings` lists reasons to distrust a result. Currently the only one is `not_greyscale`, for colour images that are
@@ -195,6 +197,22 @@ The lock files are generated with [uv](https://docs.astral.sh/uv/) (`pip install
 | Re-lock after changing `pyproject.toml` | `make lock` | `python scripts/lock.py` |
 | Upgrade every pin to the newest compatible release | `make upgrade` | `python scripts/lock.py --upgrade` |
 | Check the locks are up to date (CI does this) | `make check-lock` | `python scripts/lock.py --check` |
+
+## Amazon SageMaker (serverless)
+
+The same CPU image runs as a SageMaker Serverless Inference endpoint, which bills only while it handles requests.
+With `BTD_SAGEMAKER=true` the API adds SageMaker's `/ping` and `/invocations` routes, and
+[`scripts/sagemaker.py`](scripts/sagemaker.py) copies the image into ECR, deploys the endpoint, calls it, and
+deletes it again:
+
+```bash
+python scripts/sagemaker.py push --tag 0.1.3
+python scripts/sagemaker.py deploy --tag 0.1.3 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
+python scripts/sagemaker.py invoke --repeat 3
+python scripts/sagemaker.py delete --everything
+```
+
+[docs/SAGEMAKER.md](docs/SAGEMAKER.md) covers the one-off AWS setup, costs, cold starts and troubleshooting.
 
 ## CI/CD (GitHub Actions)
 
@@ -243,7 +261,8 @@ requirements/  hash-locked serving dependencies
 tests/         unit/ · api/ · pipeline/ (end-to-end, `-m pipeline`)
 scripts/       smoke_test.py (API check used by CI) · lock.py (uv lock files) · make_readme_figure.py
                make_demo_samples.py (the web page's sample slices) · make_ui_screenshots.py
-docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md · images/ (README figures)
+               sagemaker.py (serverless endpoint: push, deploy, invoke, delete)
+docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md · SAGEMAKER.md · images/ (README figures)
 ```
 
 ## Development
