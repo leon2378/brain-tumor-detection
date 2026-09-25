@@ -57,8 +57,11 @@ python scripts/sagemaker.py delete --everything
 Add `--region <region>` to every command if it differs from your `aws configure` default.
 
 - **`push`** creates a private ECR repository (with vulnerability scanning on) and copies the linux/amd64 image
-  from GHCR into it. SageMaker only runs images from ECR in your own account and region. GHCR serves the image as a
-  multi-part index (image plus SBOM and provenance), which SageMaker rejects, so only the image itself is copied.
+  from GHCR into it. SageMaker only runs images from ECR in your own account and region. It also rejects both the
+  multi-part index GHCR serves (image plus SBOM and provenance) and the newer OCI image format
+  (`Unsupported manifest media type application/vnd.oci.image.manifest.v1+json`), so `push` re-packs the image in
+  Docker's own v2 format. The layers, entrypoint, user and environment stay identical; only the packaging changes,
+  and `push` checks the result before you deploy.
 - **`deploy`** creates a SageMaker model from that image, a serverless endpoint configuration (3 GB, one request at
   a time; change with `--memory` and `--max-concurrency`) and the endpoint, then waits until it's InService. That
   usually takes a few minutes.
