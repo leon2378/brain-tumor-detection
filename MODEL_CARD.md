@@ -24,6 +24,8 @@
 - **Any clinical or diagnostic use**, triage, or use as a second reader. The model isn't a medical device and hasn't
   been validated prospectively or on external data.
 - Sequences other than T1 contrast-enhanced, 3-D volumes, paediatric data, and tumour types outside the three classes.
+- Anything that isn't a brain MRI slice. The API and web page accept any image and still return an answer, so it's up
+  to the user to send only suitable images (see "Behaviour outside the training data" below).
 
 ## Training data
 
@@ -57,6 +59,35 @@ meningioma (5). Five tumour slices are called healthy, and two healthy slices ar
 
 Per-class mask mAP50-95 (FP32) is much less even: meningioma 0.782, pituitary 0.661, **glioma 0.483**. Gliomas have
 irregular, diffuse borders, so boxes and masks are markedly weaker there than the image-level accuracy suggests.
+
+These numbers are **in-distribution**: the test slices come from the same public collections as the training slices.
+The model hasn't been evaluated on independent data, such as another hospital's scanners.
+
+## Behaviour outside the training data
+
+The model always answers with one of its four labels. It has no notion of "this isn't a brain MRI", and its
+confidence says nothing about whether the input is suitable. A spot check with the released FP32 model
+(September 2026):
+
+| Input | Answer | Correct |
+|---|---|---|
+| BRISC glioma test slice, as trained | glioma 0.78 | yes |
+| The same slice rotated 90° | glioma 0.56, with 7 scattered detections | partly |
+| The same slice with inverted intensities (a stand-in for another MRI sequence) | meningioma 0.66 | no |
+| The same slice heavily blurred | meningioma 0.06 | no |
+| One slice per class from the Kaggle "Brain Tumor MRI" set | all four correct | yes, but not independent* |
+| Random noise | no tumour | yes |
+| A landscape photo (not an MRI at all) | **glioma 0.81**, 7 detections | no |
+
+\* The Kaggle set is built from the same source collections as BRISC and shares many identical slices, so agreement
+on it is no evidence of generalisation.
+
+**Input check.** Because of the last row, the API adds a `not_greyscale` warning to its response when an image is
+clearly in colour, and the web page shows it above the prediction. MRI slices are greyscale. The rule flags an image
+when more than 10% of its pixels have colour channels that differ by more than 40 (on a 0–255 scale). That share is 0
+for all 5,198 BRISC slices, at most 4.1% across the 7,200 Kaggle slices (some carry coloured annotations), and 27–98%
+for photos. The check is a basic sanity test, not a guarantee: greyscale photos, other MRI sequences such as T2 or
+FLAIR, and other body parts all pass it. Flagged requests are counted in the `btd_input_warnings_total` metric.
 
 ## Ethical considerations and limitations
 
