@@ -4,15 +4,15 @@
 
 | Artefact | Built by | Best on | Notes |
 |---|---|---|---|
-| `model_fp32.onnx` | Ultralytics ONNX export (opset 18, onnxslim) | reference | Used to tune the threshold and to measure the accuracy of every other precision |
+| `model_fp32.onnx` | Ultralytics ONNX export (opset 18, onnxslim) | reference, **CPU image** | Used to tune the threshold and to measure the accuracy of every other precision. The published CPU image ships this one: INT8 is faster on CPU but costs 3.4 points of image-level accuracy |
 | `model_fp16.onnx` | `onnxruntime.transformers.float16` (FP32 I/O kept) | **CUDA GPU** | About 2× smaller; tensor-core friendly. Needs only a few hundred MB of VRAM |
-| `model_int8.onnx` | ONNX Runtime static QDQ quantisation (`btd.export.quantize`) | **x86 CPU / Docker** | About 3.2× smaller. U8S8, per-channel weights, calibrated on 256 train images |
+| `model_int8.onnx` | ONNX Runtime static QDQ quantisation (`btd.export.quantize`) | **x86 CPU** | About 3.2× smaller. U8S8, per-channel weights, calibrated on 256 train images |
 | `model_fp16.engine` / `model_int8.engine` (optional) | Ultralytics → TensorRT | the exact GPU it was built on | Fastest on NVIDIA, but not portable across GPUs or driver versions |
 
 ## Why it fits in 6 GB
 
-- **Training** uses AMP (FP16 mixed precision). YOLO26s-seg at 640 px with batch 16 should peak at around 4 GB
-  (an estimate). The measured value is written to `run_summary.json` as `peak_gpu_memory_reserved_gb`. If you hit OOM, use `batch=8`, or
+- **Training** uses AMP (FP16 mixed precision). YOLO26s-seg at 640 px with batch 8 peaked at 3.13 GB on a 6 GB
+  RTX 3060 Laptop GPU (`peak_gpu_memory_reserved_gb` in `run_summary.json`). If you hit OOM, use `batch=4`, or
   `model=yolo26n-seg.pt`, or `imgsz=512`.
 - **Inference** in FP16 needs well under 1 GB. The service caps the ONNX Runtime CUDA arena with
   `BTD_GPU_MEM_LIMIT_MB` (2048 in the GPU image), so the GPU stays shareable.

@@ -3,7 +3,7 @@
 This folder is what the Docker image serves (`/app/models`). It stays empty in git.
 
 ```powershell
-btd package --precision int8               # → models/model.onnx + models/model.json (CPU image)
+btd package --precision fp32               # → models/model.onnx + models/model.json (CPU image)
 btd package --precision fp16 --dest models-gpu   # GPU image (docker compose --profile gpu)
 ```
 

@@ -25,8 +25,8 @@ For each uploaded slice the service returns:
 | Data checks | `btd data audit` finds exact and near duplicates and train↔test leakage; SHA-256/MD5 verification; zip-slip-safe extraction | You can't trust a 99% accuracy until you know the test set isn't in the training set |
 | Validation split | Stratified by class and imaging plane, **grouped by near-duplicate clusters** | Near-identical slices can't land on both sides of the split |
 | Model | One **YOLO26-seg** model that outputs class, box and mask together | Replaces a separate detector and segmenter. The NMS-free and NMS heads are both scored on val, and the better one ships |
-| Training | AMP (FP16 mixed precision), batch 16 @ 640, MRI-specific augmentations | Fits a **6 GB** GPU |
-| Deployment precision | ONNX **FP32 / FP16 / INT8** (+ optional TensorRT). The same letterbox code is used for calibration and serving | INT8 is about 3.2× smaller and faster on x86 CPUs at 640 px. FP16 is the right choice on a CUDA GPU ([details](docs/QUANTIZATION.md)) |
+| Training | AMP (FP16 mixed precision), batch 8 @ 640, MRI-specific augmentations | Fits a **6 GB** GPU |
+| Deployment precision | ONNX **FP32 / FP16 / INT8** (+ optional TensorRT). The same letterbox code is used for calibration and serving | INT8 is about 3.2× smaller and faster on x86 CPUs at 640 px, but costs 3.4 points of accuracy, so the CPU image ships FP32. FP16 is the right choice on a CUDA GPU ([details](docs/QUANTIZATION.md)) |
 | Operating point | Image-level threshold tuned **on validation only** (macro-F1), stored in `model.json` | The test set is touched exactly once |
 | Serving | FastAPI + ONNX Runtime + numpy post-processing. No torch in the image | The numpy decoder matches Ultralytics' own ONNX predictions (boxes, scores, masks), and CI checks this on every push. The image is small and starts fast |
 | Hardening | Request IDs, JSON logs, Prometheus metrics, upload type/size/pixel limits, optional API key, non-root read-only container, checksum-pinned model | Standard things an on-call engineer expects |
@@ -59,7 +59,7 @@ flowchart LR
 | FP16 | 21.0 MB | 0.642 | 0.972 | 0.972 | 0.994 | 0.986 | 0.841 | 76.9 ms | 12.4 ms |
 | INT8 | 11.3 MB | 0.630 | 0.938 | 0.934 | 0.969 | 0.986 | 0.803 | 47.5 ms | 28.5 ms |
 
-`yolo26s-seg` @640, 101 epochs (early stopping; best epoch 76), batch 16, AMP. Latency is end-to-end (pre-process,
+`yolo26s-seg` @640, 101 epochs (early stopping; best epoch 76), batch 8, AMP. Latency is end-to-end (pre-process,
 inference, decode, masks) over 100 runs on an RTX 3060 Laptop GPU (6 GB) and a Ryzen 7 5800H CPU. INT8 pays off only
 on CPU: the CUDA provider handles quantised graphs poorly, so INT8 is *slower* than FP32 on the GPU. FP16 is the best
 GPU build — identical accuracy to FP32, half the file, 182 MB of GPU memory.
@@ -94,11 +94,11 @@ python -m pip install -e ".[train,serve,cpu,dev]"   # uses the CUDA torch alread
 btd env                                  # torch / CUDA / GPU / onnxruntime report + fix-up hints
 btd data download                        # BRISC 2025 from Zenodo (~260 MB, MD5-verified)
 btd data prepare                         # → data/processed/brisc-yolo (+ splits.csv, prepare_report.json)
-btd train                                # configs/train.yaml: yolo26s-seg, batch 16, AMP
+btd train                                # configs/train.yaml: yolo26s-seg, batch 8, AMP
 btd export                               # newest runs/segment/*/weights/best.pt → artifacts/model
 btd evaluate --map                       # test-set report for FP32/FP16/INT8 → reports/
 btd benchmark --providers cpu cuda       # latency, size, GPU memory → reports/benchmark.md
-btd package --precision int8             # → models/model.onnx + models/model.json
+btd package --precision fp32             # → models/model.onnx + models/model.json
 btd serve --model models/model.onnx      # web page at http://127.0.0.1:8000, API docs at /docs
 ```
 
@@ -158,12 +158,12 @@ Example response (illustrative values):
 ```json
 {
   "request_id": "5f0c…",
-  "model": {"name": "brisc-yolo26s-seg", "version": "0.1.0", "precision": "int8", "provider": "CPUExecutionProvider"},
+  "model": {"name": "brisc-yolo26s-seg", "version": "0.1.0", "precision": "fp32", "provider": "CPUExecutionProvider"},
   "image": {"width": 512, "height": 512},
-  "decision": {"label": "meningioma", "score": 0.91, "threshold": 0.35, "tumor_detected": true},
+  "decision": {"label": "meningioma", "score": 0.91, "threshold": 0.05, "tumor_detected": true},
   "detections": [{"class_name": "meningioma", "confidence": 0.91, "box": {"x1": 301.2, "y1": 88.0, "x2": 371.9, "y2": 150.4},
                   "area_px": 3412, "area_fraction": 0.013, "polygons": [[[318, 90], [305, 104], "…"]]}],
-  "timings_ms": {"preprocess_ms": 1.1, "inference_ms": 38.2, "postprocess_ms": 2.0, "total_ms": 41.3},
+  "timings_ms": {"preprocess_ms": 1.1, "inference_ms": 70.2, "postprocess_ms": 2.0, "total_ms": 73.3},
   "warnings": [],
   "disclaimer": "Research/educational prototype. Not a medical device and not validated for clinical diagnosis."
 }
@@ -181,7 +181,7 @@ unlikely to be MRI slices; `/v1/predict/overlay` reports it in an `X-Input-Warni
 ## Docker
 
 ```bash
-btd package --precision int8                        # CPU model → ./models
+btd package --precision fp32                        # CPU model → ./models
 docker compose up --build                           # web page at http://localhost:8000, API docs at /docs
 btd package --precision fp16 --dest models-gpu      # GPU model → ./models-gpu
 docker compose --profile gpu up --build             # http://localhost:8001 (needs NVIDIA Container Toolkit)
@@ -239,8 +239,8 @@ guarantees.
 To **bake a trained model into the published image**, attach it to a GitHub release and point the workflow at it:
 
 ```bash
-btd package --precision int8
-gh release create model-v1 models/model.onnx models/model.json --title "BRISC YOLO26s-seg INT8" --notes-file reports/evaluation_test.md
+btd package --precision fp32
+gh release create model-v1 models/model.onnx models/model.json --title "BRISC YOLO26s-seg FP32" --notes-file reports/evaluation_test.md
 gh variable set MODEL_RELEASE_TAG --body model-v1
 git tag v0.1.0 && git push origin v0.1.0
 ```
@@ -263,7 +263,7 @@ requirements/  hash-locked serving dependencies
 tests/         unit/ · api/ · pipeline/ (end-to-end, `-m pipeline`)
 scripts/       smoke_test.py (API check used by CI) · lock.py (uv lock files) · make_readme_figure.py
                make_demo_samples.py (the web page's sample slices) · make_ui_screenshots.py
-               sagemaker.py (serverless endpoint: push, deploy, invoke, delete)
+               sagemaker.py (SageMaker endpoint: push, deploy, invoke, status, delete)
 docs/          DATASET.md · QUANTIZATION.md · WINDOWS_SETUP.md · SAGEMAKER.md · images/ (README figures)
 ```
 

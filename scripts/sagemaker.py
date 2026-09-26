@@ -1,4 +1,4 @@
-"""Deploy the CPU image to an Amazon SageMaker Serverless Inference endpoint, try it, and delete it again.
+"""Deploy the CPU image to an Amazon SageMaker endpoint (real-time or serverless), try it, and delete it again.
 
     pip install -e ".[aws]"                            # boto3
     aws configure                                      # your own credentials; this script never sees your keys
@@ -12,7 +12,9 @@ push    copies the linux/amd64 image of ghcr.io/leon2378/brain-tumor-detection:<
         runs images from ECR in your own account and region. SageMaker also rejects both the multi-part index GHCR
         serves (image plus SBOM and provenance) and OCI image manifests, so the image is re-packed as a plain Docker
         v2 image: same layers, entrypoint, user and environment, only the packaging format differs.
-deploy  creates the model, a serverless endpoint configuration and the endpoint, then waits until it's InService.
+deploy  creates the model, an endpoint configuration and the endpoint, then waits until it's InService. With
+        --instance-type (e.g. ml.t2.medium) it's a real-time endpoint, billed while it exists; without it, a
+        serverless one, which currently fails (see docs/SAGEMAKER.md).
         The container runs as `docker run IMAGE serve` with BTD_SAGEMAKER=true and BTD_PORT=8080.
 invoke  sends an MRI slice (default: the glioma sample) and prints the decision and the timings.
 delete  removes the endpoint, its configuration and the model. --everything also removes the ECR repository and
@@ -234,7 +236,7 @@ def main() -> int:
     p.add_argument("--tag", required=True, help="release tag without the v, e.g. 0.1.4")
     p.set_defaults(func=cmd_push)
 
-    d = sub.add_parser("deploy", help="create the serverless endpoint")
+    d = sub.add_parser("deploy", help="create the endpoint (serverless unless --instance-type)")
     d.add_argument("--role-arn", required=True, help="SageMaker execution role")
     d.add_argument("--tag", help="ECR tag pushed with `push`")
     d.add_argument("--image-uri", help="full image URI instead of --tag")

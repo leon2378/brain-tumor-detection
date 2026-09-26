@@ -1,4 +1,4 @@
-# docker compose up                      → CPU API on http://localhost:8000 (INT8 model from ./models)
+# docker compose up                      → CPU API on http://localhost:8000 (FP32 model from ./models)
 # docker compose --profile gpu up        → GPU API on http://localhost:8001 (put the FP16 model in ./models-gpu)
 services:
   api:

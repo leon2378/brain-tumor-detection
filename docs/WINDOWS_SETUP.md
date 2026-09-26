@@ -74,13 +74,13 @@ left of BRISC train.
 ## 5. Train (6 GB profile)
 
 ```powershell
-btd train                                        # yolo26s-seg @640, batch 16, AMP, early stopping
+btd train                                        # yolo26s-seg @640, batch 8, AMP, early stopping
 ```
 
 | Situation | Command |
 |---|---|
 | Quicker first run | `btd train model=yolo26n-seg.pt epochs=60 name=brisc-yolo26n` |
-| `CUDA out of memory` | `btd train batch=8` (or `imgsz=512`) |
+| `CUDA out of memory` | `btd train batch=4` (or `imgsz=512`) |
 | DataLoader crash / "paging file is too small" | `btd train workers=2` |
 | Resume after an interruption | `btd train model=runs\segment\brisc-yolo26s\weights\last.pt resume=True` |
 
@@ -112,7 +112,7 @@ Copy the numbers into the Results table in `README.md` and into `MODEL_CARD.md`.
 ## 8. Serve locally
 
 ```powershell
-btd package --precision int8              # → models\model.onnx + models\model.json
+btd package --precision fp32              # → models\model.onnx + models\model.json
 btd serve --model models\model.onnx       # web page at http://127.0.0.1:8000, API docs at /docs
 ```
 
@@ -144,7 +144,7 @@ Data, runs, artefacts and weights are all git-ignored. To publish the trained mo
 | Symptom | Fix |
 |---|---|
 | `'btd' is not recognized` | Activate `torch_new` again, or use `python -m btd …` |
-| `CUDA out of memory` during training | `batch=8`, close other GPU apps, `imgsz=512`, or `model=yolo26n-seg.pt` |
+| `CUDA out of memory` during training | `batch=4`, close other GPU apps, `imgsz=512`, or `model=yolo26n-seg.pt` |
 | `LoadLibrary failed with error 126` or no `CUDAExecutionProvider` | The `onnxruntime-gpu` build doesn't match torch's CUDA major version. Follow the `btd env` hint |
 | `FileExistsError: … is not empty` from `prepare` | Add `--overwrite` |
 | Download stops part-way | Run `btd data download` again: it resumes from `.part` and re-verifies the MD5 |

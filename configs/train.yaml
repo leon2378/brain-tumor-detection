@@ -1,6 +1,6 @@
 # YOLO26-seg training on BRISC 2025 — tuned for a single 6 GB CUDA GPU (RTX 2060 / 3060 Laptop / GTX 1660 Ti class).
 # Every key is passed straight to ultralytics `model.train(**cfg)`; see https://docs.ultralytics.com/modes/train/
-# Override from the CLI:  btd train --config configs/train.yaml epochs=50 batch=8
+# Override from the CLI:  btd train --config configs/train.yaml epochs=50 batch=4
 
 model: yolo26s-seg.pt          # COCO-pretrained. Alternatives: yolo26n-seg.pt (fastest), yolo26m-seg.pt (batch 8 on 6 GB),
                                # yolov8s-seg.pt / yolo11s-seg.pt (the pipeline handles their NMS head too)
@@ -8,7 +8,7 @@ data: data/processed/brisc-yolo/data.yaml
 imgsz: 640
 epochs: 120
 patience: 25                   # early stopping on val fitness
-batch: 8                      # yolo26s-seg @640 with AMP peaks around 4 GB; drop to 8 if you see CUDA OOM
+batch: 8                       # yolo26s-seg @640 with AMP peaked at 3.1 GB; drop to 4 if you see CUDA OOM
 workers: 4                     # keep low on Windows (spawned workers each hold a copy of the dataset index)
 cache: false                   # 'ram' needs ~6 GB of system RAM for BRISC at 640
 amp: true                      # mixed precision (FP16) — the main reason this fits in 6 GB
