@@ -1,7 +1,9 @@
 """Download BRISC 2025 from Zenodo with checksum verification, resume support and safe extraction.
 
 Zenodo publishes an MD5 for every file in its records API; the archive is verified before extraction, and every
-member path is checked so a malicious archive cannot write outside the destination ("zip slip").
+member path is checked so a malicious archive cannot write outside the destination ("zip slip"). The record's
+``manifest.csv`` (a SHA-256 for every image) sits next to the archive, not inside it, so it is fetched separately
+for ``btd data prepare`` to check each file against.
 If Zenodo is unreachable, download ``brisc2025.zip`` manually (Zenodo or Kaggle) and pass ``--zip``.
 """
 
@@ -16,7 +18,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from btd.constants import BRISC_ZENODO_RECORD, BRISC_ZIP_NAME
+from btd.constants import BRISC_MANIFEST_NAME, BRISC_ZENODO_RECORD, BRISC_ZIP_NAME
 from btd.utils import md5_file
 
 LOGGER = logging.getLogger(__name__)
@@ -112,6 +114,38 @@ def safe_extract(zip_path: Path, dest: Path) -> Path:
     return dest
 
 
+def fetch_manifest(dest_dir: Path, record: str = BRISC_ZENODO_RECORD, api: str = ZENODO_API) -> Path | None:
+    """Fetch and MD5-verify ``manifest.csv`` into ``dest_dir``, where ``btd data prepare`` looks for it.
+
+    Returns None with a warning when Zenodo can't be reached (e.g. offline with ``--zip``): the data is still
+    usable, only not checked file by file.
+    """
+    target = dest_dir / BRISC_MANIFEST_NAME
+    try:
+        info = zenodo_file_info(record, BRISC_MANIFEST_NAME, api)
+        if not (target.is_file() and info["md5"] and md5_file(target) == info["md5"]):
+            download_file(info["url"], target, info["size"])
+    except (DownloadError, urllib.error.URLError, OSError) as exc:
+        LOGGER.warning(
+            "Could not fetch %s (%s), so `btd data prepare` can't check the images' SHA-256. "
+            "Download it from https://zenodo.org/records/%s into %s",
+            BRISC_MANIFEST_NAME,
+            exc,
+            record,
+            dest_dir,
+        )
+        return None
+    if info["md5"]:
+        got = md5_file(target)
+        if got != info["md5"]:
+            target.unlink(missing_ok=True)
+            raise DownloadError(
+                f"MD5 mismatch for {BRISC_MANIFEST_NAME} ({got} != {info['md5']}); corrupted download removed"
+            )
+    LOGGER.info("Manifest ready: %s", target)
+    return target
+
+
 def download_brisc(
     dest_dir: str | Path = "data/raw",
     zip_path: str | Path | None = None,
@@ -119,7 +153,7 @@ def download_brisc(
     api: str = ZENODO_API,
     keep_zip: bool = True,
 ) -> Path:
-    """Fetch (or reuse) ``brisc2025.zip``, verify it and extract it. Returns the extraction directory."""
+    """Fetch (or reuse) ``brisc2025.zip``, verify it, extract it and fetch its manifest. Returns ``dest_dir``."""
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     archive = Path(zip_path) if zip_path else dest_dir / BRISC_ZIP_NAME
@@ -155,4 +189,5 @@ def download_brisc(
     safe_extract(archive, dest_dir)
     if zip_path is None and not keep_zip:
         archive.unlink(missing_ok=True)
+    fetch_manifest(dest_dir, record, api)
     return dest_dir

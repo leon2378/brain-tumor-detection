@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import shutil
 from pathlib import Path
 
@@ -25,9 +26,12 @@ def test_mask_to_polygons_fidelity() -> None:
         assert poly.min() >= 0.0 and poly.max() <= 1.0
 
 
-def test_prepare_dataset(synthetic_brisc: Path, tmp_path: Path) -> None:
+def test_prepare_dataset(synthetic_brisc: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="btd.data.prepare")
     out = tmp_path / "processed yolo"
     report = prepare_dataset(synthetic_brisc, out, val_fraction=0.25, seed=1, workers=2)
+    assert report["manifest_check"]["status"] == "ok"
+    assert "SHA-256 verified for all" in caplog.text
     data = yaml.safe_load((out / "data.yaml").read_text())
     assert data["names"] == {0: "glioma", 1: "meningioma", 2: "pituitary"}
     assert Path(data["path"]).is_absolute()
@@ -58,6 +62,16 @@ def test_prepare_dataset(synthetic_brisc: Path, tmp_path: Path) -> None:
     with pytest.raises(FileExistsError):
         prepare_dataset(synthetic_brisc, out)
     prepare_dataset(synthetic_brisc, out, overwrite=True, workers=2)
+
+
+def test_prepare_warns_without_manifest(
+    synthetic_brisc: Path, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    src = Path(shutil.copytree(synthetic_brisc, tmp_path / "raw" / "brisc2025"))
+    (src / "manifest.csv").unlink()
+    report = prepare_dataset(src, tmp_path / "out", val_fraction=0.25, seed=1, workers=2)
+    assert report["manifest_check"]["status"] == "no-manifest"
+    assert "NOT checked against their SHA-256" in caplog.text
 
 
 def test_prepare_drops_train_duplicates_of_test(tmp_path: Path) -> None:

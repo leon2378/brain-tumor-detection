@@ -41,6 +41,8 @@ IMAGE_EXTENSIONS: Final[frozenset[str]] = frozenset({".jpg", ".jpeg", ".png", ".
 # Dataset provenance (CC BY 4.0 — attribution required, see README).
 BRISC_ZENODO_RECORD: Final[str] = "17524350"
 BRISC_ZIP_NAME: Final[str] = "brisc2025.zip"
+# A SHA-256 for every file; Zenodo publishes it next to the zip, not inside it.
+BRISC_MANIFEST_NAME: Final[str] = "manifest.csv"
 BRISC_DOI: Final[str] = "10.5281/zenodo.17524350"
 BRISC_KAGGLE: Final[str] = "briscdataset/brisc2025"
 BRISC_CITATION: Final[str] = (

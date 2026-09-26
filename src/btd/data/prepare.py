@@ -31,7 +31,7 @@ import cv2
 import numpy as np
 import yaml
 
-from btd.constants import NO_TUMOR, TUMOR_CLASSES
+from btd.constants import BRISC_MANIFEST_NAME, BRISC_ZENODO_RECORD, NO_TUMOR, TUMOR_CLASSES
 from btd.data.audit import Item, compute_entries
 from btd.data.brisc import BriscRecord, index_brisc, verify_manifest
 from btd.data.hashing import UnionFind, hamming_pairs
@@ -143,6 +143,24 @@ def prepare_dataset(
     if manifest.get("mismatched"):
         raise RuntimeError(
             f"{len(manifest['mismatched'])} files fail their manifest SHA-256 - re-download the data"
+        )
+    if manifest["status"] == "ok":
+        LOGGER.info("SHA-256 verified for all %d files in the manifest", manifest["checked"])
+    elif manifest["status"] == "no-manifest":
+        LOGGER.warning(
+            "No %s next to %s, so the images were NOT checked against their SHA-256. `btd data download` "
+            "fetches it, or download it from https://zenodo.org/records/%s into %s",
+            BRISC_MANIFEST_NAME,
+            index.root,
+            BRISC_ZENODO_RECORD,
+            index.root.parent,
+        )
+    elif manifest["status"] != "skipped":
+        LOGGER.warning(
+            "Manifest check: %s (%d files verified, %d listed but missing)",
+            manifest["status"],
+            manifest["checked"],
+            len(manifest["missing"]),
         )
 
     train = index.by_split("train")
