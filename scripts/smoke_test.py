@@ -11,6 +11,7 @@ BTD_SAGEMAKER=true).
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import struct
 import sys
@@ -66,6 +67,10 @@ def post_image(base: str, image: bytes, api_key: str | None) -> tuple[int, dict]
 
 
 def main() -> int:
+    # On Windows, output to a pipe uses a legacy code page such as cp1252. Escape anything it can't encode
+    # instead of crashing before the report is printed.
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(errors="backslashreplace")
     ap = argparse.ArgumentParser()
     ap.add_argument("base_url")
     ap.add_argument("--expect-dummy", action="store_true")
@@ -106,11 +111,11 @@ def main() -> int:
     checks.append(("POST /v1/predict (black)", ok, json.dumps(pred.get("decision"))))
 
     status, body = request(f"{base}/v1/predict", b"not multipart", {"Content-Type": "text/plain"})
-    checks.append(("POST /v1/predict (bad body) → 4xx", 400 <= status < 500, str(status)))
+    checks.append(("POST /v1/predict (bad body) -> 4xx", 400 <= status < 500, str(status)))
 
     status, body = request(f"{base}/", headers={"Accept": "text/html"})
     checks.append(
-        ("GET / (browser) → web page", status == 200 and b"Brain tumour detection" in body, str(status))
+        ("GET / (browser) -> web page", status == 200 and b"Brain tumour detection" in body, str(status))
     )
     status, body = request(f"{base}/ui/app.js")
     checks.append(("GET /ui/app.js", status == 200 and b"/v1/predict" in body, f"{len(body)} bytes"))
