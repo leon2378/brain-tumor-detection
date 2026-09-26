@@ -128,6 +128,15 @@ def cmd_deploy(args: argparse.Namespace) -> None:
     session, region, account = session_for(args)
     sm = session.client("sagemaker")
     image = args.image_uri or f"{registry_of(account, region)}/{args.repository}:{args.tag}"
+    variant: dict[str, Any] = {"VariantName": "AllTraffic", "ModelName": args.name}
+    if args.instance_type:
+        # A regular (real-time) endpoint on a dedicated instance: billed per second while it exists, but it reports
+        # failures in detail and always writes container logs, which makes it the tool for diagnosing problems.
+        variant |= {"InstanceType": args.instance_type, "InitialInstanceCount": 1}
+        kind = f"real-time on 1 x {args.instance_type}, billed while it exists - delete it when you're done"
+    else:
+        variant["ServerlessConfig"] = {"MemorySizeInMB": args.memory, "MaxConcurrency": args.max_concurrency}
+        kind = f"serverless, {args.memory} MB, concurrency {args.max_concurrency}"
     print(f"creating model {args.name} from {image}")
     try:
         sm.create_model(
@@ -135,28 +144,14 @@ def cmd_deploy(args: argparse.Namespace) -> None:
             ExecutionRoleArn=args.role_arn,
             PrimaryContainer={"Image": image, "Environment": CONTAINER_ENV},
         )
-        sm.create_endpoint_config(
-            EndpointConfigName=args.name,
-            ProductionVariants=[
-                {
-                    "VariantName": "AllTraffic",
-                    "ModelName": args.name,
-                    "ServerlessConfig": {
-                        "MemorySizeInMB": args.memory,
-                        "MaxConcurrency": args.max_concurrency,
-                    },
-                }
-            ],
-        )
+        sm.create_endpoint_config(EndpointConfigName=args.name, ProductionVariants=[variant])
         sm.create_endpoint(EndpointName=args.name, EndpointConfigName=args.name)
     except ClientError as err:
         if "already exist" in str(err):
             sys.exit(f"{args.name} already exists - run `delete` first, or pass --name")
         raise
 
-    print(
-        f"waiting for endpoint {args.name} ({args.memory} MB, concurrency {args.max_concurrency}); usually 3-8 minutes"
-    )
+    print(f"waiting for endpoint {args.name} ({kind}); usually 3-8 minutes")
     started = time.time()
     while True:
         desc = sm.describe_endpoint(EndpointName=args.name)
@@ -245,6 +240,11 @@ def main() -> int:
     d.add_argument("--image-uri", help="full image URI instead of --tag")
     d.add_argument("--memory", type=int, default=3072, choices=[1024, 2048, 3072, 4096, 5120, 6144])
     d.add_argument("--max-concurrency", type=int, default=1)
+    d.add_argument(
+        "--instance-type",
+        help="deploy a regular endpoint on this instance (e.g. ml.t2.medium) instead of serverless; "
+        "billed while it exists, but with detailed errors and logs",
+    )
     d.set_defaults(func=cmd_deploy)
 
     i = sub.add_parser("invoke", help="send an MRI slice")
