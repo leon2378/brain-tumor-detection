@@ -15,7 +15,19 @@ For each uploaded slice the service returns:
 
 - an image-level decision: `glioma` · `meningioma` · `pituitary` · `no_tumor`
 - a box, a pixel mask and a polygon outline for every tumour instance, plus its area
-- optionally a PNG overlay or the mask itself, for a future frontend
+- optionally a PNG overlay or the mask itself, for other frontends
+
+## Try it
+
+The published image already contains the trained model, so one command is enough (Docker, x86-64, a 207 MB
+download):
+
+```bash
+docker run --rm -p 8000:8000 ghcr.io/leon2378/brain-tumor-detection:latest
+```
+
+Open http://localhost:8000 and pick a sample slice or drop in your own; the API docs are at
+http://localhost:8000/docs. It runs on the CPU. If port 8000 is taken, change the first number, e.g. `-p 9000:8000`.
 
 ## Design at a glance
 
@@ -26,9 +38,9 @@ For each uploaded slice the service returns:
 | Validation split | Stratified by class and imaging plane, **grouped by near-duplicate clusters** | Near-identical slices can't land on both sides of the split |
 | Model | One **YOLO26-seg** model that outputs class, box and mask together | Replaces a separate detector and segmenter. The NMS-free and NMS heads are both scored on val, and the better one ships |
 | Training | AMP (FP16 mixed precision), batch 8 @ 640, MRI-specific augmentations | Fits a **6 GB** GPU |
-| Deployment precision | ONNX **FP32 / FP16 / INT8** (+ optional TensorRT). The same letterbox code is used for calibration and serving | INT8 is about 3.2× smaller and faster on x86 CPUs at 640 px, but costs 3.4 points of accuracy, so the CPU image ships FP32. FP16 is the right choice on a CUDA GPU ([details](docs/QUANTIZATION.md)) |
+| Deployment precision | ONNX **FP32 / FP16 / INT8** (+ optional TensorRT). The same letterbox code is used for calibration and serving | INT8 is 3.7× smaller and cuts CPU latency by about a third at 640 px, but costs 3.4 points of accuracy, so the CPU image ships FP32. FP16 is the right choice on a CUDA GPU ([details](docs/QUANTIZATION.md)) |
 | Operating point | Image-level threshold tuned **on validation only** (macro-F1), stored in `model.json` | The test set is touched exactly once |
-| Serving | FastAPI + ONNX Runtime + numpy post-processing. No torch in the image | The numpy decoder matches Ultralytics' own ONNX predictions (boxes, scores, masks), and CI checks this on every push. The image is small and starts fast |
+| Serving | FastAPI + ONNX Runtime + numpy post-processing. No torch in the image | The numpy decoder matches Ultralytics' own ONNX predictions (boxes, scores, masks), and CI checks this on every push. The image is a 207 MB download and is ready within seconds |
 | Hardening | Request IDs, JSON logs, Prometheus metrics, upload type/size/pixel limits, optional API key, non-root read-only container, checksum-pinned model | Standard things an on-call engineer expects |
 | CI/CD | Lint, types, tests on Python 3.10 and 3.12, synthetic end-to-end ML run, Docker smoke test, Trivy, CodeQL, and publishing to GHCR with SBOM + provenance | Every push proves the whole pipeline still works |
 
@@ -53,7 +65,7 @@ flowchart LR
 
 ## Results
 
-> Filled in from `reports/` after training on BRISC (`btd evaluate --map`, `btd benchmark`). All numbers are on the
+> From `reports/` (`btd evaluate --map`, `btd benchmark`). All numbers are on the
 > **official BRISC test split** (1,000 slices), which is never used for training, model selection or threshold tuning.
 
 | Precision | Size | Mask mAP50-95 | Image acc. | Macro-F1 | Sensitivity | Specificity | Dice | CPU p50 | GPU p50 |
@@ -130,10 +142,12 @@ instantly in the browser, without another request. It's plain HTML, CSS and Java
 Content Security Policy. Set `BTD_UI=false` for API-only deployments.
 
 Links open a sample directly, which is handy for demos: `/?sample=glioma&expert=1&threshold=0.1` loads the glioma
-slice with the expert mask shown and the threshold at 0.10. The screenshots above were taken that way from the
-released model by [`scripts/make_ui_screenshots.py`](scripts/make_ui_screenshots.py). In the glioma one, the weak
-`glioma 0.05` detection sits inside the expert mask: it's the upper part of the same tumour, so raising the
-threshold hides real tumour rather than noise.
+slice with the expert mask shown and the threshold at 0.10. The screenshots above were taken the same way, at the
+default threshold, from the released model on a GPU by
+[`scripts/make_ui_screenshots.py`](scripts/make_ui_screenshots.py). In the glioma one, the weak `glioma 0.05`
+detection sits inside the expert mask: it's the upper part of the same tumour, so raising the threshold hides real
+tumour rather than noise. On a CPU, including the Docker image, that detection scores 0.0499, just under the
+threshold; lower the slider a little to see it.
 
 The page takes any image, and the model answers whatever you give it: a landscape photo comes back as "glioma 0.81".
 So colour images, which can't be MRI slices, get a warning above the prediction. That check is basic, and greyscale
@@ -285,8 +299,9 @@ pre-commit install
 
 - These are 2-D slices from a single sequence (T1 contrast-enhanced). There's no volumetric context and no
   multi-sequence (FLAIR/T2) input.
-- BRISC has no patient IDs, so splits are slice-level. BRISC removed duplicates and this project additionally
-  groups near-duplicates, but leakage between two slices of the same patient can't be ruled out completely.
+- BRISC has no patient IDs, so splits are slice-level. This project drops training slices that duplicate a test
+  slice and groups near-duplicates in the validation split, but two different-looking slices of the same patient
+  can still end up on both sides.
 - The image-level "no tumour" call comes from detection confidence. Very small or faint lesions will be missed.
 - The public source data comes from a small number of institutions. Expect domain shift on other scanners and protocols.
 

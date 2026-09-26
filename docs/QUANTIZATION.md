@@ -6,7 +6,7 @@
 |---|---|---|---|
 | `model_fp32.onnx` | Ultralytics ONNX export (opset 18, onnxslim) | reference, **CPU image** | Used to tune the threshold and to measure the accuracy of every other precision. The published CPU image ships this one: INT8 is faster on CPU but costs 3.4 points of image-level accuracy |
 | `model_fp16.onnx` | `onnxruntime.transformers.float16` (FP32 I/O kept) | **CUDA GPU** | About 2× smaller; tensor-core friendly. Needs only a few hundred MB of VRAM |
-| `model_int8.onnx` | ONNX Runtime static QDQ quantisation (`btd.export.quantize`) | **x86 CPU** | About 3.2× smaller. U8S8, per-channel weights, calibrated on 256 train images |
+| `model_int8.onnx` | ONNX Runtime static QDQ quantisation (`btd.export.quantize`) | **x86 CPU** | About 3.7× smaller (11.3 vs 41.8 MB). U8S8, per-channel weights, calibrated on 256 train images |
 | `model_fp16.engine` / `model_int8.engine` (optional) | Ultralytics → TensorRT | the exact GPU it was built on | Fastest on NVIDIA, but not portable across GPUs or driver versions |
 
 ## Why it fits in 6 GB
