@@ -2,13 +2,13 @@
 
 ## TL;DR
 
-| | Kaggle "Brain Tumor MRI" family (the local `Brain Tumor MRI Data/`) | **BRISC 2025** (used here) |
+| | Kaggle "Brain Tumor MRI" family (the copy audited below) | **BRISC 2025** (used here) |
 |---|---|---|
-| Size | 7,200 slices (1,400 train + 400 test per class) in the local copy; the widely used Kaggle version has 7,023 | 6,000 slices (5,000 train / 1,000 test) |
+| Size | 7,200 slices (1,400 train + 400 test per class) in the audited copy; the widely used Kaggle version has 7,023 | 6,000 slices (5,000 train / 1,000 test) |
 | Classes | glioma, meningioma, pituitary, no tumour | same four |
 | Labels | Folder name only | Folder labels, **pixel masks for all 4,793 tumour slices** (radiologist/physician reviewed), and imaging plane (axial/coronal/sagittal) |
 | Sources | Merge of the figshare (Cheng et al.), SARTAJ and Br35H collections | Derived from the same public collections, then re-curated |
-| Duplicates / leakage | Known problem: exact and near-duplicate slices, some across train/test | "Exact duplicates and near-duplicates … were removed; de-duplication was completed **before** any train/test split". The audit still finds train/test pairs, so `prepare` drops them from train (see below) |
+| Duplicates / leakage | Known problem: **50.5% of test images** have an exact or near copy in train ([audit](#audit-results)) | "Exact duplicates and near-duplicates … were removed; de-duplication was completed **before** any train/test split". The audit still finds train/test pairs (40.2% of test slices), so `prepare` drops them from train (see below) |
 | Integrity | None | `manifest.csv` with a SHA-256 per file; Zenodo publishes an MD5 for the archive |
 | License | Varies by the upstream sources | **CC BY 4.0** |
 | Supports | Classification only | Classification, **detection and instance segmentation** (boxes come from masks) |
@@ -19,7 +19,7 @@ has no boxes and no masks. Its test split is also unlikely to be independent of 
 ## Check it yourself: the audit tool
 
 ```powershell
-btd data audit --data "..\Brain Tumor MRI Data" --out reports/audit-kaggle
+btd data audit --data "path\to\Brain Tumor MRI Data" --out reports/audit-kaggle
 btd data audit --data data/raw --out reports/audit-brisc
 ```
 
@@ -37,8 +37,25 @@ It then reports:
 - **leakage**: the share of test images that have an exact or near copy in train, per class
 - **label conflicts**: clusters of (near-)identical images filed under different classes
 
-Paste `reports/audit-kaggle/audit.md` into your notes. It's concrete evidence for why accuracies of 99% or more on
-that dataset should be distrusted.
+## Audit results
+
+Both audits ran on 2026-09-22 with the default settings, on the 7,200-slice Kaggle copy and on the raw BRISC 2025
+release:
+
+| | Kaggle "Brain Tumor MRI" | BRISC 2025 (raw) |
+|---|---|---|
+| Images (train / test) | 7,200 (5,600 / 1,600) | 6,000 (5,000 / 1,000) |
+| Exact-duplicate groups (redundant copies) | 277 (322) | 134 (144) |
+| Verified near-duplicate pairs (of them across train/test) | 7,508 (2,635) | 1,611 (584) |
+| Clusters whose members carry different labels | 7 | 4 |
+| Test images with a pixel-identical copy in train | 114 | 101 |
+| **Test images with an exact or near copy in train** | **808 of 1,600 (50.5%)** | **402 of 1,000 (40.2%)** |
+| Leaked test images by class | no tumour 374 of 400, pituitary 196 of 400, meningioma 151 of 400, glioma 87 of 400 | pituitary 210 of 300, meningioma 136 of 306, glioma 56 of 254, no tumour 0 of 140 |
+
+Half of the Kaggle test set, including 374 of its 400 healthy test images, already appears in its training set, so
+accuracies of 99% or more on that dataset say little about unseen scans. BRISC leaks too, only between tumour
+slices, and `btd data prepare` removes it by dropping the 801 training slices that duplicate a test slice (see
+below).
 
 ## BRISC 2025 details
 
@@ -51,7 +68,7 @@ that dataset should be distrusted.
   same stem. The loader takes labels from the filename code, which is authoritative, and cross-checks them
   against folder names.
 - Download: [Zenodo 10.5281/zenodo.17524350](https://doi.org/10.5281/zenodo.17524350) (`btd data download`
-  verifies the MD5), or [Kaggle `briscdataset/brisc2025`](https://www.kaggle.com/datasets/briscdataset/brisc2025)
+  verifies the MD5 and fetches `manifest.csv`, the SHA-256 per file that `btd data prepare` checks), or [Kaggle `briscdataset/brisc2025`](https://www.kaggle.com/datasets/briscdataset/brisc2025)
   (then run `btd data download --zip brisc2025.zip`).
 - Paper: Fateh et al., *BRISC: Annotated Dataset for Brain Tumor Segmentation and Classification*, Scientific Data
   (2026), [doi:10.1038/s41597-026-06753-y](https://doi.org/10.1038/s41597-026-06753-y). The paper reports

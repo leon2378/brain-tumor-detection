@@ -21,8 +21,8 @@ For each uploaded slice the service returns:
 
 | Concern | Choice | Why |
 |---|---|---|
-| Data | [BRISC 2025](https://doi.org/10.5281/zenodo.17524350): 6,000 slices, expert masks, CC BY 4.0 | Mostly de-duplicated; `btd data prepare` drops the training slices that still duplicate a test slice. Also has pixel masks, so detection and segmentation can be learned. Folder-labelled Kaggle sets can't do that ([why](docs/DATASET.md)) |
-| Data checks | `btd data audit` finds exact and near duplicates and train↔test leakage; SHA-256/MD5 verification; zip-slip-safe extraction | You can't trust a 99% accuracy until you know the test set isn't in the training set |
+| Data | [BRISC 2025](https://doi.org/10.5281/zenodo.17524350): 6,000 slices, expert masks, CC BY 4.0 | Meant to be de-duplicated, yet 40% of its test slices still have an exact or near copy in train, so `btd data prepare` drops those 801 training slices. Also has pixel masks, so detection and segmentation can be learned. Folder-labelled Kaggle sets can't do that ([why](docs/DATASET.md)) |
+| Data checks | `btd data audit` finds exact and near duplicates and train↔test leakage, and `btd data prepare` uses the same detection to drop leaked slices. Every file is checked against BRISC's SHA-256 manifest; zip-slip-safe extraction | You can't trust a 99% accuracy until you know the test set isn't in the training set |
 | Validation split | Stratified by class and imaging plane, **grouped by near-duplicate clusters** | Near-identical slices can't land on both sides of the split |
 | Model | One **YOLO26-seg** model that outputs class, box and mask together | Replaces a separate detector and segmenter. The NMS-free and NMS heads are both scored on val, and the better one ships |
 | Training | AMP (FP16 mixed precision), batch 8 @ 640, MRI-specific augmentations | Fits a **6 GB** GPU |
@@ -37,15 +37,18 @@ For each uploaded slice the service returns:
 ```mermaid
 flowchart LR
   subgraph data [Data]
-    Z["Zenodo: BRISC 2025<br/>MD5 + SHA-256 verified"] --> P["btd data prepare<br/>masks → polygons<br/>leakage-safe val split"]
-    K["old Kaggle set"] -.-> A["btd data audit<br/>duplicates · leakage"]
+    Z["Zenodo: BRISC 2025"] --> D["btd data download<br/>zip + manifest.csv<br/>MD5-verified"]
+    D --> P["btd data prepare<br/>SHA-256 per file<br/>drop train/test duplicates<br/>masks → polygons<br/>leakage-safe val split"]
+    D -.-> A["btd data audit<br/>duplicates · leakage report"]
+    K["old Kaggle set"] -.-> A
   end
   P --> T["btd train<br/>YOLO26-seg · AMP · 6 GB profile"]
   T --> E["btd export<br/>head selection · ONNX FP32/FP16/INT8<br/>threshold tuned on val"]
   E --> V["btd evaluate / benchmark<br/>mAP · F1 · Dice · latency"]
-  E --> M["model.onnx + model.json<br/>(sha256-pinned)"]
-  M --> S["FastAPI service<br/>ONNX Runtime: CPU · CUDA · TensorRT"]
+  E --> M["btd package<br/>model.onnx + model.json<br/>(sha256-pinned)"]
+  M --> S["FastAPI service + web page<br/>ONNX Runtime: CPU · CUDA · TensorRT"]
   S --> G["Docker image → ghcr.io"]
+  G -.-> SM["SageMaker endpoint<br/>(image copied to ECR)"]
 ```
 
 ## Results
@@ -92,7 +95,7 @@ cd brain-tumor-detection
 python -m pip install -e ".[train,serve,cpu,dev]"   # uses the CUDA torch already in the env; never reinstalls torch
 
 btd env                                  # torch / CUDA / GPU / onnxruntime report + fix-up hints
-btd data download                        # BRISC 2025 from Zenodo (~260 MB, MD5-verified)
+btd data download                        # BRISC 2025 + its SHA-256 manifest from Zenodo (~260 MB, MD5-verified)
 btd data prepare                         # → data/processed/brisc-yolo (+ splits.csv, prepare_report.json)
 btd train                                # configs/train.yaml: yolo26s-seg, batch 8, AMP
 btd export                               # newest runs/segment/*/weights/best.pt → artifacts/model
@@ -102,10 +105,12 @@ btd package --precision fp32             # → models/model.onnx + models/model.
 btd serve --model models/model.onnx      # web page at http://127.0.0.1:8000, API docs at /docs
 ```
 
-Optional: see how leaky the old Kaggle dataset is:
+Optional: audit the data for duplicates and train/test leakage. [docs/DATASET.md](docs/DATASET.md#audit-results)
+has the results for BRISC and for the old Kaggle dataset, where half of the test set also appears in the
+training set.
 
 ```powershell
-btd data audit --data "..\Brain Tumor MRI Data" --out reports/audit-kaggle
+btd data audit --data data/raw --out reports/audit-brisc
 ```
 
 ## Web page

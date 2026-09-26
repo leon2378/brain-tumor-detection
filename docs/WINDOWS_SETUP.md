@@ -4,8 +4,6 @@ Run every command from **Anaconda Prompt** or **PowerShell**, inside the repo fo
 
 ```text
 Brain Tumor Detection\
-├─ Brain Tumor MRI Data\      old Kaggle set (only used by `btd data audit`)
-├─ archive.zip
 └─ brain-tumor-detection\     ← this repo (run commands from here)
 ```
 
@@ -40,7 +38,7 @@ pip install "onnxruntime-gpu>=1.20,<1.27"   # torch built for CUDA 12.x (Python 
 ## 2. Get BRISC 2025
 
 ```powershell
-btd data download                         # Zenodo, ~260 MB, MD5 verified → data\raw\brisc2025
+btd data download                         # Zenodo, ~260 MB + manifest, MD5 verified → data\raw
 ```
 
 If Zenodo is slow or blocked, download `brisc2025.zip` in your browser from
@@ -51,15 +49,15 @@ then run:
 btd data download --zip "C:\Users\Leon-PC\Downloads\brisc2025.zip"
 ```
 
-## 3. Audit the old dataset (optional, 1–3 min)
+## 3. Audit the data (optional, 1–3 min)
 
 ```powershell
-btd data audit --data "..\Brain Tumor MRI Data" --out reports\audit-kaggle
 btd data audit --data data\raw --out reports\audit-brisc
 ```
 
-Open `reports\audit-kaggle\audit.md`. The leakage table shows what share of the old test images have a copy in
-train.
+Open `reports\audit-brisc\audit.md`. The leakage table shows what share of the test slices have a copy in train;
+`btd data prepare` drops those from train. [DATASET.md](DATASET.md#audit-results) has the results for BRISC and
+for the old Kaggle dataset.
 
 ## 4. Build the YOLO dataset
 
@@ -67,7 +65,7 @@ train.
 btd data prepare                          # → data\processed\brisc-yolo (add --overwrite to rebuild)
 ```
 
-This checks every file against the manifest's SHA-256, converts masks to polygons (it reports how closely they
+This checks every file against its SHA-256 in `manifest.csv` (fetched by `btd data download`), converts masks to polygons (it reports how closely they
 match), drops training slices that duplicate a test slice, and carves a leakage-safe validation split out of what's
 left of BRISC train.
 
