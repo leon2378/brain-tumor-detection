@@ -8,7 +8,7 @@ help:
 	@echo make upgrade     - move every locked pin to the newest compatible release
 	@echo make check-lock  - fail if the lock files are out of date (CI runs this)
 	@echo make lint        - ruff + mypy
-	@echo make test        - unit tests with coverage
+	@echo make test        - unit and API tests with coverage
 	@echo make test-pipeline - end-to-end ML pipeline on synthetic data (needs torch + ultralytics)
 
 lock:
@@ -26,7 +26,7 @@ lint:
 	mypy
 
 test:
-	pytest tests/unit -m "not pipeline" --cov=btd --cov-fail-under=75
+	pytest tests/unit tests/api -m "not pipeline" --cov=btd --cov-fail-under=75
 
 test-pipeline:
 	pytest tests/pipeline -m pipeline -v

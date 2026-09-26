@@ -51,8 +51,8 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - run: pip install -e ".[dev,serve,cpu,headless]"
-      - name: Unit tests with coverage
-        run: pytest tests/unit -m "not pipeline" --cov=btd --cov-report=term-missing --cov-fail-under=75
+      - name: Unit and API tests with coverage
+        run: pytest tests/unit tests/api -m "not pipeline" --cov=btd --cov-report=term-missing --cov-fail-under=75
 
   ml-pipeline:
     name: ml-pipeline (synthetic data, CPU)
