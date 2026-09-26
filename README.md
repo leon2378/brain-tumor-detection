@@ -198,21 +198,23 @@ The lock files are generated with [uv](https://docs.astral.sh/uv/) (`pip install
 | Upgrade every pin to the newest compatible release | `make upgrade` | `python scripts/lock.py --upgrade` |
 | Check the locks are up to date (CI does this) | `make check-lock` | `python scripts/lock.py --check` |
 
-## Amazon SageMaker (serverless)
+## Amazon SageMaker
 
-The same CPU image runs as a SageMaker Serverless Inference endpoint, which bills only while it handles requests.
-With `BTD_SAGEMAKER=true` the API adds SageMaker's `/ping` and `/invocations` routes, and
-[`scripts/sagemaker.py`](scripts/sagemaker.py) copies the image into ECR, deploys the endpoint, calls it, and
-deletes it again:
+The same CPU image runs on a SageMaker endpoint. With `BTD_SAGEMAKER=true` the API adds SageMaker's `/ping` and
+`/invocations` routes, and [`scripts/sagemaker.py`](scripts/sagemaker.py) copies the image into ECR, deploys the
+endpoint, calls it, and deletes it again:
 
 ```bash
 python scripts/sagemaker.py push --tag 0.1.4
-python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
+python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution --instance-type ml.t2.medium
 python scripts/sagemaker.py invoke --repeat 3
 python scripts/sagemaker.py delete --everything
 ```
 
-[docs/SAGEMAKER.md](docs/SAGEMAKER.md) covers the one-off AWS setup, costs, cold starts and troubleshooting.
+A real-time endpoint on one `ml.t2.medium` in `ap-southeast-2` reached InService in under 2 minutes and answered
+3 of 3 calls with the glioma sample (359–385 ms each). The serverless variant (leave out `--instance-type`) fails
+with a generic error and no logs; what's been ruled out is in [docs/SAGEMAKER.md](docs/SAGEMAKER.md), along with the
+one-off AWS setup, costs and troubleshooting.
 
 ## CI/CD (GitHub Actions)
 

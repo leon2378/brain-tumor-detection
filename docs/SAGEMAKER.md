@@ -1,21 +1,50 @@
-# Deploying to Amazon SageMaker (serverless)
+# Deploying to Amazon SageMaker
 
-This runs the released CPU image as an Amazon SageMaker **Serverless Inference** endpoint: AWS starts the container
-when a request arrives and bills only while it's handling requests. The endpoint is meant to be deployed, tested and
-deleted again, not left running. [`scripts/sagemaker.py`](../scripts/sagemaker.py) does all of it.
+This runs the released CPU image on an Amazon SageMaker endpoint, meant to be deployed, tested and deleted again,
+not left running. [`scripts/sagemaker.py`](../scripts/sagemaker.py) does all of it. Two kinds of endpoint are
+supported: **real-time**, on a dedicated instance billed while it exists, and **serverless**, which starts the
+container per request and bills only for processing time.
+
+## Status (September 2026)
+
+**Real-time works.** Deployed from the released `0.1.4` image in `ap-southeast-2` on one `ml.t2.medium`:
+
+| | Result |
+|---|---|
+| Time to InService | under 2 minutes |
+| Container start-up | model loaded on the CPU, no errors; SageMaker's `/ping` health checks all answered |
+| `invoke --repeat 3` with the glioma sample slice | 3 × HTTP 200, 359–385 ms each inside the container |
+
+`ml.t2.medium` is a small, burstable CPU, roughly five times slower than a Ryzen 7 5800H laptop for this model.
+
+**Serverless doesn't work yet.** Both attempts ended `Failed` after about 6.5 minutes with only "Request to service
+failed. If failure persists after retry, contact customer support.", and no container logs were ever written. Ruled
+out so far:
+
+- **Image format:** the image in ECR is a single Docker v2 manifest, which SageMaker accepted when creating the model.
+- **Start-up in a Lambda-style sandbox:** the image starts with a replaced `PATH`, an arbitrary user and a read-only
+  filesystem (this fixed a real bug in 0.1.3, but not the serverless failure).
+- **Permissions:** the execution role has `AmazonSageMakerFullAccess`, trusts `sagemaker.amazonaws.com`, and the IAM
+  policy simulator allows it to pull the image and write logs.
+- **Account limits:** serverless concurrency 10 and 25 endpoints, far above the 1 and 1 requested.
+
+The same image, role and settings run on a real-time endpoint, so the cause is specific to serverless. The next step
+is reading the serverless attempt in CloudTrail (needs `AWSCloudTrail_ReadOnlyAccess`) to see which step failed.
 
 ## What it costs
 
-- **The endpoint:** no charge while idle. You pay per millisecond of processing, scaled by the memory size
+- **A real-time endpoint:** billed per second while it exists, whether or not it's used. `ml.t2.medium` is roughly
+  5–10 US cents an hour, so a 15-minute test costs a few cents. Delete it as soon as you're done.
+- **A serverless endpoint:** no charge while idle. You pay per millisecond of processing, scaled by the memory size
   (3 GB by default). A prediction takes a fraction of a second of CPU, so a test session of a few dozen calls costs
-  cents. New AWS accounts have usually had a free allowance for serverless inference; check the
-  [SageMaker pricing page](https://aws.amazon.com/sagemaker/pricing/) for current numbers.
+  cents. New AWS accounts have usually had a free allowance for serverless inference.
+- Check the [SageMaker pricing page](https://aws.amazon.com/sagemaker/pricing/) for current numbers.
 - **The image in ECR:** about $0.10 per GB per month, so about 2 cents a month for the ~200 MB image.
 - **Logs in CloudWatch:** negligible for a test.
 
 `delete --everything` removes all three, so nothing keeps costing money afterwards.
 
-## Limits worth knowing
+## Limits of serverless
 
 - **CPU only.** Serverless endpoints have no GPUs, so this uses the CPU image.
 - **Cold starts.** The first request after a quiet spell takes several seconds while AWS starts the container;
@@ -45,16 +74,26 @@ These steps involve your account, payment details and keys, so they're yours to 
 
 ## Deploy, test, delete
 
-Use a released tag that includes the SageMaker routes and the full-path entrypoint (0.1.4 or later), without the `v`:
+Use a released tag that includes the SageMaker routes and the full-path entrypoint (0.1.4 or later), without the `v`.
+The working route today is a real-time endpoint:
 
 ```bash
 python scripts/sagemaker.py push --tag 0.1.4
-python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
+python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution --instance-type ml.t2.medium
 python scripts/sagemaker.py invoke --repeat 3
 python scripts/sagemaker.py delete --everything
 ```
 
-Add `--region <region>` to every command if it differs from your `aws configure` default.
+Leave out `--instance-type` for a serverless endpoint (see the status above). Add `--region <region>` to every
+command if it differs from your `aws configure` default. To send your own slice, use
+`invoke --file path/to/slice.jpg`, or call it directly:
+
+```bash
+aws sagemaker-runtime invoke-endpoint --endpoint-name brain-tumor-detection --content-type application/x-image --body fileb://slice.jpg result.json
+```
+
+The web page can't be used with a SageMaker endpoint: every request must be signed with AWS credentials, so the
+image runs there with `BTD_UI=false`.
 
 - **`push`** creates a private ECR repository (with vulnerability scanning on) and copies the linux/amd64 image
   from GHCR into it. SageMaker only runs images from ECR in your own account and region. It also rejects both the
@@ -62,9 +101,10 @@ Add `--region <region>` to every command if it differs from your `aws configure`
   (`Unsupported manifest media type application/vnd.oci.image.manifest.v1+json`), so `push` re-packs the image in
   Docker's own v2 format. The layers, entrypoint, user and environment stay identical; only the packaging changes,
   and `push` checks the result before you deploy.
-- **`deploy`** creates a SageMaker model from that image, a serverless endpoint configuration (3 GB, one request at
-  a time; change with `--memory` and `--max-concurrency`) and the endpoint, then waits until it's InService. That
-  usually takes a few minutes.
+- **`deploy`** creates a SageMaker model from that image, an endpoint configuration and the endpoint, then waits
+  until it's InService. With `--instance-type` it's a real-time endpoint on one instance of that type (billed while
+  it exists); without it, a serverless one (3 GB, one request at a time; change with `--memory` and
+  `--max-concurrency`).
 - **`invoke`** sends the glioma sample slice (or `--file`) and prints the decision, any input warnings, the model's
   own processing time and the full round trip.
 - **`status`** shows whether the endpoint exists and its state.
@@ -103,6 +143,6 @@ failed after about six minutes with only "Request to service failed". 0.1.4 uses
 | `push` fails at `docker login` or with "denied" | Check Docker Desktop is running and `aws sts get-caller-identity` works |
 | `deploy` fails with an ECR access error | Attach the `AmazonEC2ContainerRegistryReadOnly` policy to the execution role |
 | The endpoint ends up `Failed` | `deploy` prints the reason; the container's own logs are in CloudWatch under `/aws/sagemaker/Endpoints/brain-tumor-detection` |
-| `Failed` with only "Request to service failed", and no log group exists | The container never started. Check the image starts with a replaced `PATH`: `docker run --rm -e PATH=/usr/local/bin:/usr/bin/:/bin:/opt/bin -e BTD_SAGEMAKER=true -e BTD_PORT=8080 IMAGE serve` |
+| `Failed` with only "Request to service failed", and no log group exists | The container never started. Check the image starts with a replaced `PATH`: `docker run --rm -e PATH=/usr/local/bin:/usr/bin/:/bin:/opt/bin -e BTD_SAGEMAKER=true -e BTD_PORT=8080 IMAGE serve`. If it does, deploy with `--instance-type ml.t2.medium`: a real-time endpoint gives detailed errors and logs. If that works too, the problem is specific to serverless (see the status at the top) |
 | `invoke` returns `ModelError` | Look at the same CloudWatch log group; the API logs each request as JSON |
 | `already exists` on `deploy` | An earlier endpoint is still there; run `delete` first |
