@@ -231,10 +231,10 @@ ml-pipeline (synthetic data, CPU): prepare → train → export FP32/FP16/INT8 �
 image comes with an SBOM and build provenance. Tags also build the `-gpu` image.
 [`codeql.yml`](.github/workflows/codeql.yml) scans the Python code and the workflows.
 
-Dependabot keeps the actions and Docker base images current. It deliberately doesn't manage Python packages: it bumps
-lock-file pins one at a time, which breaks exact pairs such as pydantic and pydantic-core. Run `make upgrade`
-instead. Actions are pinned to major version tags; pin them to commit SHAs if you need stricter supply-chain
-guarantees.
+Dependencies are updated by hand. `make upgrade` (or `python scripts/lock.py --upgrade`) moves every Python pin at
+once, which keeps exact pairs such as pydantic and pydantic-core in step. Action versions live in
+`.github/workflows/` and the base images in `docker/`. Actions are pinned to major version tags; pin them to commit
+SHAs if you need stricter supply-chain guarantees.
 
 To **bake a trained model into the published image**, attach it to a GitHub release and point the workflow at it:
 

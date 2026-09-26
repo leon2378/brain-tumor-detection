@@ -1,8 +1,8 @@
 """Regenerate the hash-locked serving requirements with uv.
 
 The Docker images install requirements/serve-*.txt with ``pip --require-hashes --no-deps``, so each lock file must be a
-complete, mutually compatible set of pins. Change them only through this script (or ``make lock``), never by hand or
-through Dependabot: bumping one package on its own (e.g. pydantic-core without pydantic) breaks the image at start-up.
+complete, mutually compatible set of pins. Change them only through this script (or ``make lock``), never by hand:
+bumping one package on its own (e.g. pydantic-core without pydantic) breaks the image at start-up.
 
     python scripts/lock.py             # after editing pyproject.toml: re-lock, keeping existing pins where possible
     python scripts/lock.py --upgrade   # move every pin to the newest compatible release
