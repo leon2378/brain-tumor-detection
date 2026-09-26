@@ -45,11 +45,11 @@ These steps involve your account, payment details and keys, so they're yours to 
 
 ## Deploy, test, delete
 
-Use a released tag that includes the SageMaker routes (0.1.3 or later), without the `v`:
+Use a released tag that includes the SageMaker routes and the full-path entrypoint (0.1.4 or later), without the `v`:
 
 ```bash
-python scripts/sagemaker.py push --tag 0.1.3
-python scripts/sagemaker.py deploy --tag 0.1.3 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
+python scripts/sagemaker.py push --tag 0.1.4
+python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
 python scripts/sagemaker.py invoke --repeat 3
 python scripts/sagemaker.py delete --everything
 ```
@@ -75,7 +75,8 @@ Add `--region <region>` to every command if it differs from your `aws configure`
 
 | SageMaker expects | What this image does |
 |---|---|
-| It starts the container as `docker run IMAGE serve` | The image's entrypoint is `btd`, so that runs `btd serve` |
+| It starts the container as `docker run IMAGE serve` | The entrypoint is `/opt/venv/bin/btd`, so that runs `btd serve` |
+| It replaces the image's `PATH` and runs as its own user on a read-only filesystem | The entrypoint is a full path, and the server writes nothing outside `/tmp` |
 | The server listens on port 8080 | `deploy` sets `BTD_PORT=8080` (8000 is the default elsewhere) |
 | `GET /ping` answers 200 when ready | Added with `BTD_SAGEMAKER=true`; 503 until the model is loaded |
 | `POST /invocations` with the raw request body | The same response as `/v1/predict`, including `warnings` |
@@ -87,7 +88,12 @@ bypasses `BTD_API_KEY`, so ordinary deployments don't get it. Don't set `BTD_API
 send the header.
 
 CI tests this contract on every push: it starts the image as `docker run IMAGE serve` with `BTD_SAGEMAKER=true` and
-`BTD_PORT=8080` and runs [`scripts/smoke_test.py --sagemaker`](../scripts/smoke_test.py) against it.
+`BTD_PORT=8080`, with Lambda's `PATH`, an arbitrary user and a read-only filesystem, and runs
+[`scripts/smoke_test.py --sagemaker`](../scripts/smoke_test.py) against it.
+
+That sandbox check exists because of a real failure. In 0.1.3 the entrypoint was a bare `btd`, found only through the
+image's `PATH`. SageMaker Serverless replaces `PATH`, so the container couldn't start, wrote no logs, and the endpoint
+failed after about six minutes with only "Request to service failed". 0.1.4 uses the full path.
 
 ## If something goes wrong
 
@@ -97,5 +103,6 @@ CI tests this contract on every push: it starts the image as `docker run IMAGE s
 | `push` fails at `docker login` or with "denied" | Check Docker Desktop is running and `aws sts get-caller-identity` works |
 | `deploy` fails with an ECR access error | Attach the `AmazonEC2ContainerRegistryReadOnly` policy to the execution role |
 | The endpoint ends up `Failed` | `deploy` prints the reason; the container's own logs are in CloudWatch under `/aws/sagemaker/Endpoints/brain-tumor-detection` |
+| `Failed` with only "Request to service failed", and no log group exists | The container never started. Check the image starts with a replaced `PATH`: `docker run --rm -e PATH=/usr/local/bin:/usr/bin/:/bin:/opt/bin -e BTD_SAGEMAKER=true -e BTD_PORT=8080 IMAGE serve` |
 | `invoke` returns `ModelError` | Look at the same CloudWatch log group; the API logs each request as JSON |
 | `already exists` on `deploy` | An earlier endpoint is still there; run `delete` first |

@@ -206,8 +206,8 @@ With `BTD_SAGEMAKER=true` the API adds SageMaker's `/ping` and `/invocations` ro
 deletes it again:
 
 ```bash
-python scripts/sagemaker.py push --tag 0.1.3
-python scripts/sagemaker.py deploy --tag 0.1.3 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
+python scripts/sagemaker.py push --tag 0.1.4
+python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/btd-sagemaker-execution
 python scripts/sagemaker.py invoke --repeat 3
 python scripts/sagemaker.py delete --everything
 ```

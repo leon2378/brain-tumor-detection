@@ -45,5 +45,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD ["python", "-c", "import os, sys, urllib.request; url = f'http://127.0.0.1:{os.environ.get(\"BTD_PORT\", \"8000\")}/health'; sys.exit(0 if urllib.request.urlopen(url, timeout=4).status == 200 else 1)"]
 # `docker run IMAGE` serves on BTD_PORT. SageMaker runs `docker run IMAGE serve` and sets BTD_PORT=8080.
-ENTRYPOINT ["btd"]
+# Full path: SageMaker Serverless, like Lambda, replaces PATH, and a bare "btd" then can't even start.
+ENTRYPOINT ["/opt/venv/bin/btd"]
 CMD ["serve"]

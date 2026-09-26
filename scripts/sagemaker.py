@@ -2,8 +2,8 @@
 
     pip install -e ".[aws]"                            # boto3
     aws configure                                      # your own credentials; this script never sees your keys
-    python scripts/sagemaker.py push --tag 0.1.3       # GHCR image -> a private ECR repository
-    python scripts/sagemaker.py deploy --tag 0.1.3 --role-arn arn:aws:iam::<account>:role/<execution role>
+    python scripts/sagemaker.py push --tag 0.1.4       # GHCR image -> a private ECR repository
+    python scripts/sagemaker.py deploy --tag 0.1.4 --role-arn arn:aws:iam::<account>:role/<execution role>
     python scripts/sagemaker.py invoke [--file slice.jpg] [--repeat 3]
     python scripts/sagemaker.py status
     python scripts/sagemaker.py delete [--everything]
@@ -236,7 +236,7 @@ def main() -> int:
     sub = ap.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("push", help="copy the GHCR image into ECR")
-    p.add_argument("--tag", required=True, help="release tag without the v, e.g. 0.1.3")
+    p.add_argument("--tag", required=True, help="release tag without the v, e.g. 0.1.4")
     p.set_defaults(func=cmd_push)
 
     d = sub.add_parser("deploy", help="create the serverless endpoint")

@@ -115,9 +115,13 @@ jobs:
           test "$(docker exec btd-ci id -u)" = "10001"
       - name: Smoke test the API
         run: python scripts/smoke_test.py http://localhost:8000 --expect-dummy
-      - name: Smoke test as SageMaker runs it (`docker run IMAGE serve`, port 8080)
+      # Like SageMaker Serverless (built on Lambda): `docker run IMAGE serve` on port 8080, with the platform's own
+      # PATH, an arbitrary user and a read-only filesystem. A bare `btd` entrypoint failed there before logging a line.
+      - name: Smoke test as SageMaker runs it
         run: |
           docker run -d --name btd-ci-sagemaker \
+            -e PATH=/usr/local/bin:/usr/bin/:/bin:/opt/bin \
+            --user 12345:12345 --read-only --tmpfs /tmp \
             -e BTD_SAGEMAKER=true -e BTD_PORT=8080 \
             -v "$PWD/ci-models:/app/models:ro" \
             -p 8080:8080 brain-tumor-detection:ci serve
