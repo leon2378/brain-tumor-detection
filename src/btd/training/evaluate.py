@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -207,7 +208,10 @@ def ultralytics_metrics(
         kwargs["batch"] = 1
     if nms is not None:
         kwargs["nms"] = nms
-    r = model.val(**kwargs)
+    # Ultralytics creates a save_dir even with plots=False; point it at a temp dir so runs/segment/ doesn't
+    # collect an empty val, val-2, ... folder on every call.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        r = model.val(**kwargs, project=tmp, name="val", exist_ok=True)
     names = [r.names[i] for i in sorted(r.names)] if isinstance(r.names, dict) else list(r.names)
     seg_maps = getattr(r.seg, "maps", None)
     return {
