@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "brain-tumor-detection"
-version = "0.1.3"
+version = "0.1.4"
 description = "Brain tumour detection and segmentation on MRI (BRISC 2025) with YOLO26-seg, INT8/FP16 ONNX quantisation and a FastAPI inference service."
 readme = "README.md"
 requires-python = ">=3.10"
